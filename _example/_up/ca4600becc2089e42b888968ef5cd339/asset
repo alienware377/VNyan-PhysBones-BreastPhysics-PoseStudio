@@ -1,0 +1,325 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>VNyanInterface</name>
+    </assembly>
+    <members>
+        <member name="T:VNyanInterface.IAvatarInterface">
+            <summary>
+            Avatar related functionality
+            </summary>
+        </member>
+        <member name="M:VNyanInterface.IAvatarInterface.getAvatarObject">
+            <summary>
+            Gets currently loaded avatar gameobject
+            </summary>
+            <returns>GameObject of the current avatar or null if not loaded</returns>
+        </member>
+        <member name="M:VNyanInterface.IAvatarInterface.getBlendshapeLastFrame(System.String)">
+            <summary>
+            Get Blendshape's accumulated value at end of last frame
+            </summary>
+            <param name="name">Name of blendshape</param>
+            <returns>Blendshape's value at end of last frame</returns>
+        </member>
+        <member name="M:VNyanInterface.IAvatarInterface.getBlendshapeInstant(System.String)">
+            <summary>
+            Get Blendshape's value at moment of execution
+            </summary>
+            <param name="name">Name of blendshape</param>
+            <returns>Blendshape's value</returns>
+        </member>
+        <member name="M:VNyanInterface.IAvatarInterface.getBlendshapesInstant">
+            <summary>
+            Gets all blendshape values at moment of execution
+            </summary>
+            <returns>Key value collection of blendshapes</returns>
+        </member>
+        <member name="M:VNyanInterface.IAvatarInterface.setBlendshapeOverride(System.String,System.Single)">
+            <summary>
+            Sets blendshape override value. This value overrides tracking but is shared with node graphs
+            </summary>
+            <param name="name">Blendshape name</param>
+            <param name="value">Blendshape value</param>
+        </member>
+        <member name="M:VNyanInterface.IAvatarInterface.clearBlendshapeOverride(System.String)">
+            <summary>
+            Clears overriden blendshape.
+            </summary>
+            <param name="name">Blenshape override to clear</param>
+        </member>
+        <member name="M:VNyanInterface.IAvatarInterface.registerPoseLayer(VNyanInterface.IPoseLayer)">
+            <summary>
+            Register pose layer
+            </summary>
+            <param name="layer">Layer to register</param>
+        </member>
+        <member name="T:VNyanInterface.IPoseLayer">
+            <summary>
+            Used to affect avatar's bone rotations and positions
+            </summary>
+        </member>
+        <member name="M:VNyanInterface.IPoseLayer.doUpdate(VNyanInterface.PoseLayerFrame@)">
+            <summary>
+            Perform updates
+            </summary>
+            <param name="frame">Contains current bone rotations and positions</param>
+        </member>
+        <member name="M:VNyanInterface.IPoseLayer.getBonePosition(System.Int32)">
+            <summary>
+            Return bone position for given bone index
+            </summary>
+            <param name="i">Index of Unity bone</param>
+            <returns>Bone local position</returns>
+        </member>
+        <member name="M:VNyanInterface.IPoseLayer.getBoneRotation(System.Int32)">
+            <summary>
+            Return bone rotation for given bone index
+            </summary>
+            <param name="i">Index of Unity bone</param>
+            <returns>Bone local rotation</returns>
+        </member>
+        <member name="M:VNyanInterface.IPoseLayer.getBoneScaleMultiplier(System.Int32)">
+            <summary>
+            Return bone scale multiplier for given bone index
+            Result for local bone scale will be bone local scale * bone scale multiplier
+            </summary>
+            <param name="i">Index of Unity bone</param>
+            <returns>Bone scale multiplier</returns>
+        </member>
+        <member name="M:VNyanInterface.IPoseLayer.getRootPosition">
+            <summary>
+            Return root position
+            </summary>
+            <returns>Root position</returns>
+        </member>
+        <member name="M:VNyanInterface.IPoseLayer.getRootRotation">
+            <summary>
+            Return root rotation
+            </summary>
+            <returns>Root rotation</returns>
+        </member>
+        <member name="M:VNyanInterface.IPoseLayer.isActive">
+            <summary>
+            Is the layer active or not
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="T:VNyanInterface.VNyanVector3">
+            <summary>
+            Vector3 component
+            </summary>
+        </member>
+        <member name="T:VNyanInterface.VNyanQuaternion">
+            <summary>
+            Quaternion
+            </summary>
+        </member>
+        <member name="T:VNyanInterface.PoseLayerFrame">
+            <summary>
+            Frame for pose layer
+            </summary>
+        </member>
+        <member name="P:VNyanInterface.PoseLayerFrame.RootPosition">
+            <summary>
+            Avatar's root position
+            </summary>
+        </member>
+        <member name="P:VNyanInterface.PoseLayerFrame.RootRotation">
+            <summary>
+            Avatar's root rotation
+            </summary>
+        </member>
+        <member name="P:VNyanInterface.PoseLayerFrame.BonePosition">
+            <summary>
+            Bone position. Index is Unity's HumanBodyBone
+            </summary>
+        </member>
+        <member name="P:VNyanInterface.PoseLayerFrame.BoneScaleMultiplier">
+            <summary>
+            Bone scale multiplier. Index is Unity's HumanBodyBone
+            </summary>
+        </member>
+        <member name="P:VNyanInterface.PoseLayerFrame.BoneRotation">
+            <summary>
+            Bone position. Index is Unity's HumanBodyBone
+            </summary>
+        </member>
+        <member name="T:VNyanInterface.IParameterInterface">
+            <summary>
+            Parameter related functionality
+            </summary>
+        </member>
+        <member name="M:VNyanInterface.IParameterInterface.getVNyanParameterFloat(System.String)">
+            <summary>
+            Gets VNyan's float parameter by name. Case insensitive
+            </summary>
+            <param name="parameterName">Case insensitive name of parameter</param>
+            <returns>Parameter value or 0 if not initialized</returns>
+        </member>
+        <member name="M:VNyanInterface.IParameterInterface.getVNyanParameterString(System.String)">
+            <summary>
+            Gets VNyan's string parameter by name. Case insensitive
+            </summary>
+            <param name="parameterName">Case insensitive name of parameter</param>
+            <returns>Parameter value or 0 if not initialized</returns>
+        </member>
+        <member name="M:VNyanInterface.IParameterInterface.setVNyanParameterFloat(System.String,System.Single)">
+            <summary>
+            Sets VNyan's float parameter
+            </summary>
+            <param name="parameterName">Parameter to set</param>
+            <param name="value">Value to set</param>
+        </member>
+        <member name="M:VNyanInterface.IParameterInterface.setVNyanParameterString(System.String,System.String)">
+            <summary>
+            Sets VNyan's string parameter
+            </summary>
+            <param name="parameterName">Parameter to set</param>
+            <param name="value">Value to set</param>
+        </member>
+        <member name="M:VNyanInterface.IParameterInterface.fillStringWithParameters(System.String)">
+            <summary>
+            Replaces bracketed parameters with parameter values
+            </summary>
+            <param name="originalString">String with bracketet parameters</param>
+            <returns>String with parameter values</returns>
+        </member>
+        <member name="T:VNyanInterface.IPendulumInterface">
+            <summary>
+            Functionality related to pendulum chains
+            </summary>
+        </member>
+        <member name="M:VNyanInterface.IPendulumInterface.createPendulumChain(System.Int32,System.Single,System.Single,System.Single,System.Single)">
+            <summary>
+            Create pendulum chain with given values
+            </summary>
+            <param name="boneCount">Amount of bones to add to the chain</param>
+            <param name="damping">Amount of Damping</param>
+            <param name="elasticity">Elasticity of the chain</param>
+            <param name="stiffness">Stiffness of the chain</param>
+            <param name="inert">Inert</param>
+            <returns>Root of the created chain</returns>
+        </member>
+        <member name="M:VNyanInterface.IPendulumInterface.deletePendulumChain(VNyanInterface.IPendulumRoot)">
+            <summary>
+            Delete pendulum chain with given root
+            </summary>
+            <param name="root">Root of the chain to remove</param>
+        </member>
+        <member name="T:VNyanInterface.IPendulumRoot">
+            <summary>
+            Interface for handling pendulum root
+            </summary>
+        </member>
+        <member name="M:VNyanInterface.IPendulumRoot.setPositionValue(System.Single)">
+            <summary>
+            Set positional value of the pendulum root.
+            Changes of this value will make the pendulum swing back and forth
+            </summary>
+            <param name="value">Positional value</param>
+        </member>
+        <member name="M:VNyanInterface.IPendulumRoot.setRotationValue(System.Single)">
+            <summary>
+            Set rotational value of the pendulum root.
+            This makes pendulum swing to a certain angle and remain there
+            </summary>
+            <param name="value">Rotational value</param>
+        </member>
+        <member name="M:VNyanInterface.IPendulumRoot.getChains">
+            <summary>
+            Returns list of pendulum chain bones connected to this root
+            </summary>
+            <returns>List of child bones</returns>
+        </member>
+        <member name="T:VNyanInterface.IPendulumChain">
+            <summary>
+            Interface for individual pendulum chain bones
+            </summary>
+        </member>
+        <member name="M:VNyanInterface.IPendulumChain.getValue">
+            <summary>
+            Returns the current value of the pendulum chain
+            </summary>
+            <returns></returns>
+        </member>
+        <member name="T:VNyanInterface.ISettingsInterface">
+            <summary>
+            Interface for handling settings files
+            </summary>
+        </member>
+        <member name="M:VNyanInterface.ISettingsInterface.saveSettings(System.String,System.Collections.Generic.Dictionary{System.String,System.String})">
+            <summary>
+            Saves settings contained in dictionary to a json-file in user's profile in appdata
+            </summary>
+            <param name="settingsName"></param>
+            <param name="settings"></param>
+        </member>
+        <member name="M:VNyanInterface.ISettingsInterface.loadSettings(System.String)">
+            <summary>
+            Load settings to dictionary from user's profile in appdata
+            </summary>
+            <param name="settingsName"></param>
+            <returns></returns>
+        </member>
+        <member name="T:VNyanInterface.IUIInterface">
+            <summary>
+            Interface for handling user interface related functions
+            </summary>
+        </member>
+        <member name="M:VNyanInterface.IUIInterface.registerPluginButton(System.String,VNyanInterface.IButtonClickedHandler)">
+            <summary>
+            Register plugin window button with callback
+            </summary>
+            <param name="buttonText">Button text</param>
+            <param name="clickCallback">Callback class</param>
+        </member>
+        <member name="M:VNyanInterface.IUIInterface.instantiateUIPrefab(System.Object)">
+            <summary>
+            Instantiates prefab to VNyan's UI canvas
+            </summary>
+            <param name="gameObject">Prefab to instantiate</param>
+            <returns>Instantiated GameObject</returns>
+        </member>
+        <member name="T:VNyanInterface.IButtonClickedHandler">
+            <summary>
+            Interface for handling plugin window button clicks
+            </summary>
+        </member>
+        <member name="M:VNyanInterface.IButtonClickedHandler.pluginButtonClicked">
+            <summary>
+            Plugin window button click callback function
+            </summary>
+        </member>
+        <member name="T:VNyanInterface.VNyanInterface">
+            <summary>
+            Contains all the interfaces to access VNyan's functionality
+            </summary>
+        </member>
+        <member name="F:VNyanInterface.VNyanInterface.VNyanParameter">
+            <summary>
+            Interface for accessing VNyan's parameters
+            </summary>
+        </member>
+        <member name="F:VNyanInterface.VNyanInterface.VNyanAvatar">
+            <summary>
+            Interface for accessing VNyan's Avatar-related functionality
+            </summary>
+        </member>
+        <member name="F:VNyanInterface.VNyanInterface.VNyanPendulum">
+            <summary>
+            Interface for accessing VNyan's Pendulum-system
+            </summary>
+        </member>
+        <member name="F:VNyanInterface.VNyanInterface.VNyanUI">
+            <summary>
+            Interface for accessing VNyan's UI-system
+            </summary>
+        </member>
+        <member name="F:VNyanInterface.VNyanInterface.VNyanSettings">
+            <summary>
+            Interface for handling plugin settings
+            </summary>
+        </member>
+    </members>
+</doc>

@@ -1,0 +1,20 @@
+-target:library
+-nologo
+-optimize+
+-out:"P:\My Documents\Claude Code\VNyanPhysBones\build\JayoPoseStudio.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\netstandard.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\System.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\System.Core.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.CoreModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.InputLegacyModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.AnimationModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.UI.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.UIModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.TextRenderingModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\VNyanInterface.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\Newtonsoft.Json.dll"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoPoseStudio\Scripts\PoseConfig.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoPoseStudio\Scripts\PoseUtil.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoPoseStudio\Scripts\PoseApplier.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoPoseStudio\Scripts\PoseWindowDrag.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoPoseStudio\Scripts\PoseStudioPlugin.cs"

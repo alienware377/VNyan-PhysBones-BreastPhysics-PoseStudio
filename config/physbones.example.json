@@ -1,0 +1,74 @@
+{
+  "settings": {
+    "enabled": true,
+    "substeps": 2,
+    "gravityDir": [0, -1, 0]
+  },
+  "colliders": [
+    {
+      "name": "head",
+      "type": "sphere",
+      "bone": "Head",
+      "offset": [0, 0.08, 0],
+      "radius": 0.11
+    },
+    {
+      "name": "chest",
+      "type": "capsule",
+      "bone": "Chest",
+      "offset": [0, 0.05, 0.02],
+      "axis": [0, 1, 0],
+      "height": 0.30,
+      "radius": 0.09
+    },
+    {
+      "name": "floor",
+      "type": "plane",
+      "bone": null,
+      "offset": [0, 0, 0],
+      "axis": [0, 1, 0]
+    }
+  ],
+  "chains": [
+    {
+      "name": "hair_back",
+      "rootBone": "Hair_Back_01",
+      "ignore": ["Hair_Accessory"],
+      "pull": 0.18,
+      "spring": 0.25,
+      "stiffness": 0.15,
+      "gravity": 0.25,
+      "gravityFalloff": 0.0,
+      "immobile": 0.1,
+      "limitType": "angle",
+      "maxAngle": 60,
+      "radius": 0.02,
+      "colliders": ["head", "chest"]
+    },
+    {
+      "name": "tail",
+      "rootBone": "Tail_01",
+      "pull": 0.12,
+      "spring": 0.35,
+      "stiffness": 0.1,
+      "gravity": 0.4,
+      "immobile": 0.0,
+      "limitType": "none",
+      "radius": 0.03,
+      "colliders": []
+    },
+    {
+      "name": "skirt",
+      "rootBone": "Skirt_Root",
+      "pull": 0.3,
+      "spring": 0.15,
+      "stiffness": 0.25,
+      "gravity": 0.3,
+      "immobile": 0.2,
+      "limitType": "angle",
+      "maxAngle": 45,
+      "radius": 0.015,
+      "colliders": ["chest", "floor"]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+-target:library
+-nologo
+-optimize+
+-out:"P:\My Documents\Claude Code\VNyanPhysBones\build\JayoPhysBones.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\netstandard.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\System.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\System.Core.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.CoreModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.AnimationModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.UI.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.UIModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.TextRenderingModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\VNyanInterface.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\Newtonsoft.Json.dll"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoPhysBones\Scripts\PhysBoneConfig.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoPhysBones\Scripts\BoneUtil.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoPhysBones\Scripts\PhysBoneCollider.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoPhysBones\Scripts\PhysBoneChain.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoPhysBones\Scripts\PhysBonePlugin.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoPhysBones\Scripts\WindowDrag.cs"

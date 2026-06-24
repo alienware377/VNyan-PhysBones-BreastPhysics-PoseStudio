@@ -1,0 +1,25 @@
+# Unity-generated caches / build artifacts in the headless bundle-build project
+_unitybuild/Library/
+_unitybuild/Logs/
+_unitybuild/UserSettings/
+_unitybuild/obj/
+_unitybuild/Temp/
+_unitybuild/AssetBundles/*.manifest
+
+# Build logs scattered at project + _unitybuild root
+*.log
+_unitybuild/unity_stderr.txt
+_unitybuild/unity_stdout.txt
+
+# Compiled intermediates from csc (the shippable DLLs live in dist/)
+build/*.dll
+build/*.pdb
+
+# OS / editor cruft
+Thumbs.db
+desktop.ini
+.DS_Store
+*.csproj
+*.sln
+VNyan_Diagnostics_Report.txt
+CLAUDE.md

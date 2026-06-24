@@ -1,0 +1,20 @@
+-target:library
+-nologo
+-optimize+
+-out:"P:\My Documents\Claude Code\VNyanPhysBones\build\JayoJigglePhysics.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\netstandard.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\System.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\System.Core.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.CoreModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.AnimationModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.UI.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.UIModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\UnityEngine.TextRenderingModule.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\VNyanInterface.dll"
+-reference:"C:\Program Files\VNyan\VNyan_Data\Managed\Newtonsoft.Json.dll"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoJigglePhysics\Scripts\JiggleConfig.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoJigglePhysics\Scripts\JiggleUtil.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoJigglePhysics\Scripts\JiggleCollider.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoJigglePhysics\Scripts\JiggleBone.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoJigglePhysics\Scripts\JiggleWindowDrag.cs"
+"P:\My Documents\Claude Code\VNyanPhysBones\Assets\JayoJigglePhysics\Scripts\JigglePhysicsPlugin.cs"

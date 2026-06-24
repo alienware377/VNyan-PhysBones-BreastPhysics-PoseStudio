@@ -1,0 +1,27 @@
+{
+  "settings": {
+    "enabled": true
+  },
+  "items": [
+    {
+      "name": "Head Tilt",
+      "type": "toggle",
+      "active": false,
+      "blendTime": 0.25,
+      "speed": 1.0,
+      "waveform": "sine",
+      "bones": [
+        {
+          "bone": "Head",
+          "usePosition": false,
+          "useRotation": true,
+          "useScale": false,
+          "position": [ 0.0, 0.0, 0.0 ],
+          "rotation": [ 0.0, 0.0, 20.0 ],
+          "scale": [ 1.0, 1.0, 1.0 ]
+        }
+      ],
+      "blendshapes": []
+    }
+  ]
+}

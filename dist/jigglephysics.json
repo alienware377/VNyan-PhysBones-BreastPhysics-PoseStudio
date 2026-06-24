@@ -1,0 +1,52 @@
+{
+  "settings": {
+    "enabled": true,
+    "substeps": 2,
+    "gravityDir": null,
+    "minScale": 0.65,
+    "maxScale": 1.6,
+    "scaleSpeed": 14.0,
+    "overrideNative": false
+  },
+  "colliders": [],
+  "bones": [
+    {
+      "name": "left",
+      "bone": "Bust_L",
+      "axis": [ 0.0, 0.0, 1.0 ],
+      "length": 0.08,
+      "weight": 0.5,
+      "bounce": 0.6,
+      "stiffness": 0.2,
+      "damping": 0.1,
+      "pull": 0.15,
+      "limitType": "angle",
+      "maxAngle": 60.0,
+      "stretch": 0.4,
+      "squish": 0.5,
+      "radius": 0.04,
+      "selfCollide": true,
+      "selfRadius": 0.06,
+      "colliders": []
+    },
+    {
+      "name": "right",
+      "bone": "Bust_R",
+      "axis": [ 0.0, 0.0, 1.0 ],
+      "length": 0.08,
+      "weight": 0.5,
+      "bounce": 0.6,
+      "stiffness": 0.2,
+      "damping": 0.1,
+      "pull": 0.15,
+      "limitType": "angle",
+      "maxAngle": 60.0,
+      "stretch": 0.4,
+      "squish": 0.5,
+      "radius": 0.04,
+      "selfCollide": true,
+      "selfRadius": 0.06,
+      "colliders": []
+    }
+  ]
+}

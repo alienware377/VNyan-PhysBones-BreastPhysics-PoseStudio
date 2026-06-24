@@ -1,6 +1,15 @@
 # VNyan Physics Plugins
 
-Three independent VNyan plugins for VRM models — no VRChat SDK required, everything configured from editable JSON files with live in-VNyan tuning windows.
+[![Latest Release](https://img.shields.io/github/v/release/alienware377/VNyan-PhysBones-BreastPhysics-PoseStudio?label=download&color=brightgreen)](https://github.com/alienware377/VNyan-PhysBones-BreastPhysics-PoseStudio/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+**Three free VNyan plugins that bring VRChat-style physics and custom animations to your VRM VTuber avatar — no VRChat SDK, no Unity editor skills required.**
+
+- **Hair, skirt, and tail physics** that behave like VRChat PhysBones — just JSON, no SDK.
+- **Breast / soft-body jiggle** with real squash-and-stretch deformation.
+- **Pose Studio** — build looping dances, toggle poses, and keyframe animations entirely inside VNyan, with 2-bone IK so feet stay planted during wide hip sways.
+
+All three work with any VRM model in VNyan. One-click installer, live-tuning windows, configs save to your AppData folder. No admin rights needed to tune or save.
 
 | Plugin | Button name | What it does |
 |--------|-------------|--------------|

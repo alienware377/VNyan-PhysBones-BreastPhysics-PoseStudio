@@ -179,6 +179,7 @@ namespace JayoJiggle
             WireButton("Button_Reload", OnReloadClicked);
             WireButton("Button_Save", OnSaveClicked);
             WireButton("Button_Close", OnCloseClicked);
+            WireButton("Button_ImportColliders", OnImportColliders);
 
             RefreshBoneList();
             window.SetActive(false);
@@ -396,6 +397,59 @@ namespace JayoJiggle
         void OnSaveClicked() { SaveConfig(); }
 
         void OnCloseClicked() { if (window != null) window.SetActive(false); }
+
+        void OnImportColliders()
+        {
+            try
+            {
+                string wsDir = Path.Combine(Application.persistentDataPath, "WeightStudio");
+                string chosen = NativeFileDialog.OpenFile(
+                    "Import Colliders — pick a Weight Studio sidecar file",
+                    Directory.Exists(wsDir) ? wsDir : Application.persistentDataPath,
+                    "Jiggle collider sidecar (*.jigglephysics.json)", "*.jigglephysics.json");
+
+                if (string.IsNullOrEmpty(chosen)) { SetStatus("Import cancelled."); return; }
+
+                string json = File.ReadAllText(chosen);
+                JiggleConfig imported = JsonConvert.DeserializeObject<JiggleConfig>(json);
+                if (imported == null || imported.colliders == null || imported.colliders.Count == 0)
+                {
+                    SetStatus("No colliders in " + Path.GetFileName(chosen));
+                    return;
+                }
+
+                if (config == null) config = new JiggleConfig();
+                if (config.colliders == null) config.colliders = new List<JiggleColliderConfig>();
+
+                HashSet<string> existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < config.colliders.Count; i++)
+                    if (config.colliders[i] != null && !string.IsNullOrEmpty(config.colliders[i].name))
+                        existing.Add(config.colliders[i].name);
+
+                int added = 0, skipped = 0;
+                for (int i = 0; i < imported.colliders.Count; i++)
+                {
+                    JiggleColliderConfig cc = imported.colliders[i];
+                    if (cc == null) continue;
+                    if (!string.IsNullOrEmpty(cc.name) && existing.Contains(cc.name))
+                    { skipped++; continue; }
+                    config.colliders.Add(cc);
+                    if (!string.IsNullOrEmpty(cc.name)) existing.Add(cc.name);
+                    added++;
+                }
+
+                RebindAll();
+                string msg = "Imported " + added + " collider(s) from " + Path.GetFileName(chosen);
+                if (skipped > 0) msg += " (" + skipped + " skipped: name already exists)";
+                msg += " — Save to keep";
+                SetStatus(msg);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("[Jiggle] import colliders failed: " + e.Message);
+                SetStatus("Import failed: " + e.Message);
+            }
+        }
 
         void SetStatus(string msg)
         {

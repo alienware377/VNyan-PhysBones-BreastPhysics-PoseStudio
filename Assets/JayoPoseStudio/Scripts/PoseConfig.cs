@@ -93,6 +93,8 @@ namespace JayoPoseStudio
         public string id;                         // "bone:Name" | "mesh:Name" | "blend:Mesh::Shape"
         public float[] position = { 0f, 0f, 0f }; // local position OFFSET (metres)   — transform channels
         public float[] rotation = { 0f, 0f, 0f }; // local euler OFFSET (degrees)      — transform channels
+        public float[] quat = null;               // local rotation OFFSET as quaternion [x,y,z,w]; if set,
+                                                   // it OVERRIDES `rotation` (slerped) — avoids euler gimbal/order issues
         public float[] scale = { 1f, 1f, 1f };    // local scale MULTIPLIER            — transform channels
         public float weight = 100f;               // 0..100 blendshape weight          — blend channels
     }
@@ -114,6 +116,11 @@ namespace JayoPoseStudio
         public static string BoneId(string bone) { return "bone:" + bone; }
         public static string MeshId(string mesh) { return "mesh:" + mesh; }
         public static string BlendId(string mesh, string shape) { return "blend:" + mesh + "::" + shape; }
+        // IK target OFFSET channel: an animated per-keyframe delta (position metres / rotation
+        // euler) added to the goal's CAPTURED rest target, expressed in the goal's `space`.
+        // Offset 0 = the limb holds its captured pin (the static behaviour); a non-zero offset
+        // moves the pin per keyframe (e.g. lift a foot for a kick, then plant it again).
+        public static string IkId(string goalName) { return "ik:" + goalName; }
 
         public static KeyframeChannel Find(PoseKeyframe key, string id)
         {
@@ -244,6 +251,11 @@ namespace JayoPoseStudio
         public List<BoneTarget> bones = new List<BoneTarget>();
         public List<MeshTarget> meshes = new List<MeshTarget>();
         public List<BlendTarget> blendshapes = new List<BlendTarget>();
+
+        // ----- Hide meshes -----
+        // Renderer object names to HIDE (disable) while this item is active, restored when it
+        // turns off. Useful for swapping/removing clothing or accessories with a toggle/anim.
+        public List<string> hideMeshes = new List<string>();
 
         // ----- Inverse kinematics -----
         // 2-bone IK goals (feet/hands) applied after FK each frame while this item is active.

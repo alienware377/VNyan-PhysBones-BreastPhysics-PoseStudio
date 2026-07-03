@@ -68,7 +68,8 @@ $plugins = @(
             'Assets\JayoPhysBones\Scripts\PhysBoneCollider.cs',
             'Assets\JayoPhysBones\Scripts\PhysBoneChain.cs',
             'Assets\JayoPhysBones\Scripts\PhysBonePlugin.cs',
-            'Assets\JayoPhysBones\Scripts\WindowDrag.cs'
+            'Assets\JayoPhysBones\Scripts\WindowDrag.cs',
+            'Assets\JayoPhysBones\Scripts\NativeFileDialog.cs'
         )
     },
     [pscustomobject]@{
@@ -84,7 +85,8 @@ $plugins = @(
             'Assets\JayoJigglePhysics\Scripts\JiggleCollider.cs',
             'Assets\JayoJigglePhysics\Scripts\JiggleBone.cs',
             'Assets\JayoJigglePhysics\Scripts\JiggleWindowDrag.cs',
-            'Assets\JayoJigglePhysics\Scripts\JigglePhysicsPlugin.cs'
+            'Assets\JayoJigglePhysics\Scripts\JigglePhysicsPlugin.cs',
+            'Assets\JayoJigglePhysics\Scripts\NativeFileDialog.cs'
         )
     },
     [pscustomobject]@{

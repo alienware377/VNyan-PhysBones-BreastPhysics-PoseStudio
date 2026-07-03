@@ -15,7 +15,7 @@ All three work with any VRM model in VNyan. One-click installer, live-tuning win
 |--------|-------------|--------------|
 | **JayoPhysBones** | "VRChat PhysBones" | VRChat-style dynamic bone physics for hair, skirts, tails. Verlet solver, JSON-configured chains, live sliders, bone-tree picker. |
 | **Jiggle Physics** | "Jiggle Physics" | Soft-tissue jiggle (chest / pec / belly) with squash-and-stretch deformation. Leaf-bone solver, volume-preserving scale. |
-| **Pose Studio** | "Pose Studio" | Build bone/mesh toggles and looping animations in VNyan — including 2-bone IK so feet and hands stay planted while the body moves. No Unity, no keyframe editor — pick bones from a tree, dial offsets, hit Save. |
+| **Pose Studio** | "Pose Studio" | Build bone/mesh toggles and looping animations in VNyan — 2-bone IK so feet and hands stay planted while the body moves, quaternion keyframe channels for imported animation, and per-item mesh hiding for outfit swaps. No Unity, no keyframe editor — pick bones from a tree, dial offsets, hit Save. |
 
 All three install together, run in `LateUpdate` independently, and save their configs to your VNyan AppData folder so you never need admin rights to tune or save.
 
@@ -193,9 +193,10 @@ Build **toggles** and **looping animations** from bone / mesh / blendshape offse
 6. **Keyframe timeline** — tick *Use keyframe timeline* to switch from a wave to a custom sequence of poses. Add/remove keyframes; each has its own bone/mesh/blendshape offsets and a transition duration.
 7. **Blendshape trigger** — tick *Drive strength from a blendshape* and pick a source shape (e.g. face-tracked `MouthOpen`). The source's 0–100% drives the item's strength continuously. **Curve** shapes the response (1 = linear, >1 = ease-in, <1 = ease-out). **Strength %** scales the output.
 8. **Add Bone / Add Mesh** — opens the collapsible model tree; pick any bone or mesh object. Tick Position / Rotation / Scale and dial the X/Y/Z sliders. **Remove** drops it.
-9. **Add Blendshape** — opens the same browser in mesh→shape mode. Set **Blend Wt** (0–100). **Remove** drops it.
-10. **IK goals** — add 2-bone IK goals (legs/arms) that pin end effectors in place after FK runs. See the [IK section](#inverse-kinematics-ik) below.
-11. **Reload / Save / Close**.
+9. **Hide Mesh** — opens the mesh browser with a ☐/☒ toggle per renderer; the picked meshes are **hidden while the item is active** and restored when it turns off. Great for swapping or removing clothing / accessories with a toggle or hotkey.
+10. **Add Blendshape** — opens the same browser in mesh→shape mode. Set **Blend Wt** (0–100). **Remove** drops it.
+11. **IK goals** — add 2-bone IK goals (legs/arms) that pin end effectors in place after FK runs. See the [IK section](#inverse-kinematics-ik) below.
+12. **Reload / Save / Close**.
 
 ### Configuring (`posestudio.json`)
 
@@ -210,7 +211,7 @@ Saved to `%USERPROFILE%\AppData\LocalLow\Suvidriel\VNyan\posestudio.json` — no
 | `speed` | Animation cycles/sec |
 | `waveform` | `"sine"`, `"triangle"`, or `"pulse"` |
 | `useKeyframes` | `true` to use the keyframe timeline instead of a wave |
-| `keyframes[]` | `{ seconds, channels[] }` — each keyframe has a duration and per-target pose |
+| `keyframes[]` | `{ seconds, channels[] }` — each keyframe has a duration and per-target pose. A transform channel may carry `quat` `[x,y,z,w]` which overrides its euler `rotation` (slerped between keyframes) — handy for animation exported from other tools. A channel `id` of `ik:<GoalName>` animates that IK goal's target as a per-keyframe offset. |
 | `useTrigger` | `true` to drive strength from a blendshape |
 | `triggerMesh` | Source `SkinnedMeshRenderer` name (empty = any mesh) |
 | `triggerShape` | Source blendshape name |
@@ -220,6 +221,7 @@ Saved to `%USERPROFILE%\AppData\LocalLow\Suvidriel\VNyan\posestudio.json` — no
 | `bones[]` | `{ bone, usePosition, useRotation, useScale, position[3], rotation[3], scale[3] }` |
 | `meshes[]` | `{ mesh, usePosition, useRotation, useScale, position[3], rotation[3], scale[3] }` |
 | `blendshapes[]` | `{ mesh, shape, weight }` (empty `mesh` searches every mesh) |
+| `hideMeshes[]` | Renderer names to hide (disable) while the item is active; restored when it turns off |
 | `ikGoals[]` | 2-bone IK goals; see [IK section](#inverse-kinematics-ik) |
 
 Bone and mesh names accept Unity humanoid enum names (`Head`, `LeftHand`, …) or raw transform names.

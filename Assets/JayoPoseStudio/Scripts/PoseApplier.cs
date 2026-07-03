@@ -1,4 +1,7 @@
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Text;
 using UnityEngine;
 
 namespace JayoPoseStudio
@@ -78,6 +81,8 @@ namespace JayoPoseStudio
             public bool captured;
             public Vector3 tgtPos;       // target position in `space` (local to space)
             public Quaternion tgtRot;    // target rotation in `space` (local to space)
+            public string channelId;     // "ik:<name>" animated-offset channel id
+            public bool animated;        // true if a keyframe carries an ik: offset channel
             public bool engaged;
             public Quaternion baseUp, baseMid, baseEnd; // captured local rots for restore
         }
@@ -86,10 +91,20 @@ namespace JayoPoseStudio
         Animator animator;
         PoseConfig config;
 
+        // A renderer to disable while any of its `items` are active (restored otherwise).
+        class HideGroup
+        {
+            public Renderer r;
+            public bool baseEnabled;
+            public bool hidden;
+            public readonly List<ItemRT> items = new List<ItemRT>();
+        }
+
         readonly List<ItemRT> items = new List<ItemRT>();
         readonly List<BoneGroup> boneGroups = new List<BoneGroup>();
         readonly List<BlendGroup> blendGroups = new List<BlendGroup>();
         readonly List<IKBind> ikBinds = new List<IKBind>();
+        readonly List<HideGroup> hideGroups = new List<HideGroup>();
 
         public void Bind(GameObject av, Animator anim, PoseConfig cfg)
         {
@@ -102,6 +117,7 @@ namespace JayoPoseStudio
             boneGroups.Clear();
             blendGroups.Clear();
             ikBinds.Clear();
+            hideGroups.Clear();
 
             if (avatar == null || config == null || config.items == null) return;
 
@@ -259,6 +275,14 @@ namespace JayoPoseStudio
                             ib.tgtPos = PoseUtil.ToVector3(goal.position, Vector3.zero);
                             ib.tgtRot = Quaternion.Euler(PoseUtil.ToVector3(goal.rotation, Vector3.zero));
                         }
+                        // Animated target: if any keyframe carries an "ik:<name>" channel, this
+                        // goal's pin is offset per-keyframe (added to the captured base target).
+                        ib.channelId = KeyChannels.IkId(goal.name);
+                        ib.animated = false;
+                        if (it.useKeyframes && it.keyframes != null)
+                            for (int kk = 0; kk < it.keyframes.Count; kk++)
+                                if (KeyChannels.Find(it.keyframes[kk], ib.channelId) != null)
+                                { ib.animated = true; break; }
                         ikBinds.Add(ib);
                     }
             }
@@ -280,7 +304,107 @@ namespace JayoPoseStudio
                 else { ib.tgtPos = ib.end.position; ib.tgtRot = ib.end.rotation; }
                 ib.captured = true;
             }
+
+            // Hide-mesh groups: renderers to disable while an item is active.
+            Renderer[] allRends = avatar.GetComponentsInChildren<Renderer>(true);
+            Dictionary<Renderer, HideGroup> hideMap = new Dictionary<Renderer, HideGroup>();
+            for (int ii = 0; ii < items.Count; ii++)
+            {
+                ItemRT rt = items[ii];
+                if (rt.item == null || rt.item.hideMeshes == null) continue;
+                for (int h = 0; h < rt.item.hideMeshes.Count; h++)
+                {
+                    string nm = rt.item.hideMeshes[h];
+                    if (string.IsNullOrEmpty(nm)) continue;
+                    string low = nm.ToLowerInvariant();
+                    for (int r = 0; r < allRends.Length; r++)
+                    {
+                        Renderer rend = allRends[r];
+                        if (rend == null || rend.name.ToLowerInvariant() != low) continue;
+                        HideGroup hg;
+                        if (!hideMap.TryGetValue(rend, out hg))
+                        {
+                            hg = new HideGroup(); hg.r = rend;
+                            hideMap[rend] = hg; hideGroups.Add(hg);
+                        }
+                        if (!hg.items.Contains(rt)) hg.items.Add(rt);
+                    }
+                }
+            }
+
+            // One-time: dump the avatar's REST skeleton + blendshape names so an external
+            // retargeter can compute axis-agnostic bone rotations (no per-rig axis guessing).
+            try { DumpSkeleton(); } catch (System.Exception e) { Debug.LogWarning("[PoseStudio] skeleton dump failed: " + e.Message); }
         }
+
+        // Writes rest-pose world/local rotations for every humanoid bone (incl. fingers/toes)
+        // and every mesh's blendshape names to <persistentDataPath>/posestudio_skeleton.json.
+        // Called from Bind() while the avatar is still in its neutral/rest pose.
+        void DumpSkeleton()
+        {
+            if (avatar == null || animator == null || !animator.isHuman) return;
+            CultureInfo ci = CultureInfo.InvariantCulture;
+            StringBuilder sb = new StringBuilder();
+            sb.Append("{\n");
+
+            // root reference frame
+            Transform root = avatar.transform;
+            sb.Append("\"root\":");
+            AppendXform(sb, ci, root, null);
+            sb.Append(",\n\"bones\":{\n");
+
+            bool first = true;
+            int last = (int)HumanBodyBones.LastBone;
+            for (int b = 0; b < last; b++)
+            {
+                HumanBodyBones hb = (HumanBodyBones)b;
+                Transform t = animator.GetBoneTransform(hb);
+                if (t == null) continue;
+                if (!first) sb.Append(",\n");
+                first = false;
+                sb.Append("\"").Append(hb.ToString()).Append("\":");
+                AppendXform(sb, ci, t, t.parent);
+            }
+            sb.Append("\n},\n\"blendshapes\":{\n");
+
+            SkinnedMeshRenderer[] rends = avatar.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            bool rfirst = true;
+            for (int r = 0; r < rends.Length; r++)
+            {
+                SkinnedMeshRenderer smr = rends[r];
+                if (smr == null || smr.sharedMesh == null || smr.sharedMesh.blendShapeCount == 0) continue;
+                if (!rfirst) sb.Append(",\n");
+                rfirst = false;
+                sb.Append("\"").Append(Esc(smr.name)).Append("\":[");
+                int bc = smr.sharedMesh.blendShapeCount;
+                for (int s = 0; s < bc; s++)
+                {
+                    if (s > 0) sb.Append(",");
+                    sb.Append("\"").Append(Esc(smr.sharedMesh.GetBlendShapeName(s))).Append("\"");
+                }
+                sb.Append("]");
+            }
+            sb.Append("\n}\n}\n");
+
+            string path = Path.Combine(Application.persistentDataPath, "posestudio_skeleton.json");
+            File.WriteAllText(path, sb.ToString());
+            Debug.Log("[PoseStudio] wrote skeleton dump -> " + path);
+        }
+
+        static void AppendXform(StringBuilder sb, CultureInfo ci, Transform t, Transform parent)
+        {
+            Vector3 wp = t.position; Quaternion wr = t.rotation; Quaternion lr = t.localRotation;
+            Quaternion pr = parent != null ? parent.rotation : Quaternion.identity;
+            sb.Append("{\"name\":\"").Append(Esc(t.name)).Append("\"");
+            sb.Append(",\"wpos\":[").Append(F(wp.x,ci)).Append(",").Append(F(wp.y,ci)).Append(",").Append(F(wp.z,ci)).Append("]");
+            sb.Append(",\"wrot\":[").Append(F(wr.x,ci)).Append(",").Append(F(wr.y,ci)).Append(",").Append(F(wr.z,ci)).Append(",").Append(F(wr.w,ci)).Append("]");
+            sb.Append(",\"lrot\":[").Append(F(lr.x,ci)).Append(",").Append(F(lr.y,ci)).Append(",").Append(F(lr.z,ci)).Append(",").Append(F(lr.w,ci)).Append("]");
+            sb.Append(",\"prot\":[").Append(F(pr.x,ci)).Append(",").Append(F(pr.y,ci)).Append(",").Append(F(pr.z,ci)).Append(",").Append(F(pr.w,ci)).Append("]");
+            sb.Append("}");
+        }
+
+        static string F(float v, CultureInfo ci) { return v.ToString("R", ci); }
+        static string Esc(string s) { return s == null ? "" : s.Replace("\\", "\\\\").Replace("\"", "\\\""); }
 
         static float Wave(string form, float phase)
         {
@@ -346,12 +470,26 @@ namespace JayoPoseStudio
             Vector3 pa = ca != null ? PoseUtil.ToVector3(ca.position, Vector3.zero) : Vector3.zero;
             Vector3 pb = cb != null ? PoseUtil.ToVector3(cb.position, Vector3.zero) : Vector3.zero;
             pos = Vector3.Lerp(pa, pb, u);
-            Quaternion qa = Quaternion.Euler(ca != null ? PoseUtil.ToVector3(ca.rotation, Vector3.zero) : Vector3.zero);
-            Quaternion qb = Quaternion.Euler(cb != null ? PoseUtil.ToVector3(cb.rotation, Vector3.zero) : Vector3.zero);
+            Quaternion qa = ChannelRot(ca);
+            Quaternion qb = ChannelRot(cb);
             rot = Quaternion.Slerp(qa, qb, u);
             Vector3 sa = ca != null ? PoseUtil.ToVector3(ca.scale, Vector3.one) : Vector3.one;
             Vector3 sb = cb != null ? PoseUtil.ToVector3(cb.scale, Vector3.one) : Vector3.one;
             scl = Vector3.Lerp(sa, sb, u);
+        }
+
+        // A channel's rotation offset: quaternion if provided (avoids euler gimbal/order issues),
+        // else the euler `rotation`. Identity for a missing channel.
+        static Quaternion ChannelRot(KeyframeChannel c)
+        {
+            if (c == null) return Quaternion.identity;
+            if (c.quat != null && c.quat.Length == 4)
+            {
+                Quaternion q = new Quaternion(c.quat[0], c.quat[1], c.quat[2], c.quat[3]);
+                float m = q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w;
+                if (m > 1e-6f) return q;
+            }
+            return Quaternion.Euler(PoseUtil.ToVector3(c.rotation, Vector3.zero));
         }
 
         // Interpolate a blendshape channel's weight between keyframes a and b.
@@ -516,14 +654,24 @@ namespace JayoPoseStudio
                     else { ib.tgtPos = ib.end.position; ib.tgtRot = ib.end.rotation; }
                 }
 
+                // Animated offset (in `space`) added to the captured base target this keyframe.
+                Vector3 dPos = Vector3.zero; Quaternion dRot = Quaternion.identity;
+                if (ib.animated && ib.rt.kfMode && ib.rt.item != null && ib.rt.item.keyframes != null)
+                {
+                    Vector3 sp; Quaternion sr; Vector3 ss;
+                    SampleTransformChannel(ib.rt.item.keyframes, ib.rt.kfA, ib.rt.kfB, ib.rt.kfU,
+                        ib.channelId, out sp, out sr, out ss);
+                    dPos = sp; dRot = sr;
+                }
+
                 Vector3 worldTarget;
                 Quaternion worldRot;
                 if (ib.space != null)
                 {
-                    worldTarget = ib.space.TransformPoint(ib.tgtPos);
-                    worldRot = ib.space.rotation * ib.tgtRot;
+                    worldTarget = ib.space.TransformPoint(ib.tgtPos + dPos);
+                    worldRot = ib.space.rotation * (ib.tgtRot * dRot);
                 }
-                else { worldTarget = ib.tgtPos; worldRot = ib.tgtRot; }
+                else { worldTarget = ib.tgtPos + dPos; worldRot = ib.tgtRot * dRot; }
 
                 SolveTwoBoneIK(ib.up, ib.mid, ib.end, worldTarget, a);
                 if (ib.goal.holdRotation)
@@ -563,6 +711,27 @@ namespace JayoPoseStudio
                 }
 
                 g.r.SetBlendShapeWeight(g.index, Mathf.Clamp(g.baseWeight + sum, 0f, 100f));
+            }
+
+            // 4) Hide meshes — disable a renderer while any item that hides it is active.
+            for (int gi = 0; gi < hideGroups.Count; gi++)
+            {
+                HideGroup g = hideGroups[gi];
+                if (g.r == null) continue;
+                bool wantHide = false;
+                for (int k = 0; k < g.items.Count; k++)
+                    if (g.items[k].amount > 0.5f) { wantHide = true; break; }
+                if (wantHide && !g.hidden)
+                {
+                    g.baseEnabled = g.r.enabled;
+                    g.r.enabled = false;
+                    g.hidden = true;
+                }
+                else if (!wantHide && g.hidden)
+                {
+                    g.r.enabled = g.baseEnabled;
+                    g.hidden = false;
+                }
             }
         }
 
@@ -652,6 +821,12 @@ namespace JayoPoseStudio
                 if (g.engaged && g.r != null)
                     g.r.SetBlendShapeWeight(g.index, g.baseWeight);
                 g.engaged = false;
+            }
+            for (int i = 0; i < hideGroups.Count; i++)
+            {
+                HideGroup g = hideGroups[i];
+                if (g.hidden && g.r != null) g.r.enabled = g.baseEnabled;
+                g.hidden = false;
             }
         }
     }

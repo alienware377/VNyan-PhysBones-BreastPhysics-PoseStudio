@@ -195,6 +195,7 @@ namespace JayoPhysBones
             WireButton("Button_Reload", OnReloadClicked);
             WireButton("Button_Save", OnSaveClicked);
             WireButton("Button_Close", OnCloseClicked);
+            WireButton("Button_ImportColliders", OnImportColliders);
 
             RefreshChainList();
 
@@ -434,6 +435,59 @@ namespace JayoPhysBones
         void OnCloseClicked()
         {
             if (window != null) window.SetActive(false);
+        }
+
+        void OnImportColliders()
+        {
+            try
+            {
+                string wsDir = Path.Combine(Application.persistentDataPath, "WeightStudio");
+                string chosen = NativeFileDialog.OpenFile(
+                    "Import Colliders — pick a Weight Studio sidecar file",
+                    Directory.Exists(wsDir) ? wsDir : Application.persistentDataPath,
+                    "PhysBones collider sidecar (*.physbones.json)", "*.physbones.json");
+
+                if (string.IsNullOrEmpty(chosen)) { SetStatus("Import cancelled."); return; }
+
+                string json = File.ReadAllText(chosen);
+                PhysBoneConfig imported = JsonConvert.DeserializeObject<PhysBoneConfig>(json);
+                if (imported == null || imported.colliders == null || imported.colliders.Count == 0)
+                {
+                    SetStatus("No colliders in " + Path.GetFileName(chosen));
+                    return;
+                }
+
+                if (config == null) config = new PhysBoneConfig();
+                if (config.colliders == null) config.colliders = new List<ColliderConfig>();
+
+                HashSet<string> existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < config.colliders.Count; i++)
+                    if (config.colliders[i] != null && !string.IsNullOrEmpty(config.colliders[i].name))
+                        existing.Add(config.colliders[i].name);
+
+                int added = 0, skipped = 0;
+                for (int i = 0; i < imported.colliders.Count; i++)
+                {
+                    ColliderConfig cc = imported.colliders[i];
+                    if (cc == null) continue;
+                    if (!string.IsNullOrEmpty(cc.name) && existing.Contains(cc.name))
+                    { skipped++; continue; }
+                    config.colliders.Add(cc);
+                    if (!string.IsNullOrEmpty(cc.name)) existing.Add(cc.name);
+                    added++;
+                }
+
+                RebindAll();
+                string msg = "Imported " + added + " collider(s) from " + Path.GetFileName(chosen);
+                if (skipped > 0) msg += " (" + skipped + " skipped: name already exists)";
+                msg += " — Save to keep";
+                SetStatus(msg);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("[PhysBones] import colliders failed: " + e.Message);
+                SetStatus("Import failed: " + e.Message);
+            }
         }
 
         void SetStatus(string msg)

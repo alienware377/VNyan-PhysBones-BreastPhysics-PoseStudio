@@ -339,6 +339,9 @@ public static class PoseStudioBuild
         MakeButton(c, "Button_RemoveBone", "Remove", cX + 2f * (tb3 + gap), y, tb3, 28f);
         y += 34f;
 
+        MakeButton(c, "Button_HideMesh", "Hide Mesh…", cX, y, cW, 26f);
+        y += 30f;
+
         float t3 = (cW - 2f * gap) / 3f;
         MakeToggle(c, "Toggle_UsePos", "Position", cX, y, t3, 24f);
         MakeToggle(c, "Toggle_UseRot", "Rotation", cX + (t3 + gap), y, t3, 24f);

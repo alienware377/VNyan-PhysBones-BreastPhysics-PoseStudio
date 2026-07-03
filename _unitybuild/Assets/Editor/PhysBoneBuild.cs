@@ -173,7 +173,7 @@ public static class PhysBoneBuild
 
         y += 4f;
 
-        // Buttons row (5 across: Bones, Remove, Reload, Save, Close).
+        // Buttons row 1 (5 across: Bones, Remove, Reload, Save, Close).
         const float gap = 8f;
         float bw = (contentW - 4f * gap) / 5f;
         MakeButton(root.transform, "Button_Bones", "Bones", contentX, y, bw, 30f);
@@ -181,7 +181,12 @@ public static class PhysBoneBuild
         MakeButton(root.transform, "Button_Reload", "Reload", contentX + 2f * (bw + gap), y, bw, 30f);
         MakeButton(root.transform, "Button_Save", "Save", contentX + 3f * (bw + gap), y, bw, 30f);
         MakeButton(root.transform, "Button_Close", "Close", contentX + 4f * (bw + gap), y, bw, 30f);
-        y += 30f + P;
+        y += 36f;
+
+        // Buttons row 2: Import Colliders (full width — clearly secondary action).
+        MakeButton(root.transform, "Button_ImportColliders", "Import Colliders (from Weight Studio)",
+            contentX, y, contentW, 28f);
+        y += 28f + P;
 
         rrt.sizeDelta = new Vector2(W, y);
 

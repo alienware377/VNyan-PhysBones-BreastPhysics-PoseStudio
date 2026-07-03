@@ -328,6 +328,7 @@ namespace JayoPoseStudio
             WireButton("Button_ClearTrigger", OnClearTrigger);
             WireButton("Button_AddBone", OnAddBoneClicked);
             WireButton("Button_AddMesh", OnAddMeshClicked);
+            WireButton("Button_HideMesh", OnHideMeshClicked);
             WireButton("Button_RemoveBone", OnRemoveBone);
             WireButton("Button_AddKey", OnAddKeyframe);
             WireButton("Button_RemoveKey", OnRemoveKeyframe);
@@ -1726,7 +1727,7 @@ namespace JayoPoseStudio
 
             float y = 0f;
             if (browserMode == "blend" || browserMode == "trigger") BuildBlendTree(ref y);
-            else if (browserMode == "mesh") BuildMeshTree(ref y);
+            else if (browserMode == "mesh" || browserMode == "hidemesh") BuildMeshTree(ref y);
             else AddBoneRow(boundAvatar.transform, 0, ref y);
 
             browserContent.sizeDelta = new Vector2(0f, y);
@@ -1800,9 +1801,36 @@ namespace JayoPoseStudio
             OpenBrowser("mesh");
         }
 
+        void OnHideMeshClicked()
+        {
+            if (selectedItem == null) { SetStatus("select or create an item first"); return; }
+            OpenBrowser("hidemesh");
+        }
+
         void OnMeshPicked(Transform mesh)
         {
             if (mesh == null || selectedItem == null) return;
+
+            // Hide-mesh mode: toggle this renderer's name in the item's hide list.
+            if (browserMode == "hidemesh")
+            {
+                if (selectedItem.hideMeshes == null) selectedItem.hideMeshes = new List<string>();
+                if (selectedItem.hideMeshes.Contains(mesh.name))
+                {
+                    selectedItem.hideMeshes.Remove(mesh.name);
+                    SetBrowserStatus("un-hid '" + mesh.name + "'");
+                }
+                else
+                {
+                    selectedItem.hideMeshes.Add(mesh.name);
+                    SetBrowserStatus("'" + mesh.name + "' will hide while '" + selectedItem.name + "' is active");
+                }
+                Rebind();
+                RebuildTree();
+                SetStatus("hide list: " + selectedItem.hideMeshes.Count + " mesh(es) — Save to keep");
+                return;
+            }
+
             if (selectedItem.meshes == null) selectedItem.meshes = new List<MeshTarget>();
 
             MeshTarget mt = new MeshTarget();
@@ -1829,18 +1857,26 @@ namespace JayoPoseStudio
                 return;
             }
 
+            bool hideMode = browserMode == "hidemesh";
             for (int i = 0; i < meshes.Count; i++)
             {
                 Transform mt = meshes[i];
+                bool isHidden = hideMode && selectedItem != null && selectedItem.hideMeshes != null
+                                && selectedItem.hideMeshes.Contains(mt.name);
+                string label = hideMode ? (isHidden ? "☒ " + mt.name + "  (hidden)" : "☐ " + mt.name)
+                                        : mt.name + "  •";
                 GameObject row = NewRow("Mesh_" + mt.name, y);
                 Transform captured = mt;
-                MakeRuntimeButton(row.transform, mt.name + "  •", INDENT, 0f, 1000f, ROW_H,
-                    new Color(0f, 0f, 0f, 0f), new Color(0.95f, 0.9f, 0.8f, 1f), 13,
+                MakeRuntimeButton(row.transform, label, INDENT, 0f, 1000f, ROW_H,
+                    new Color(0f, 0f, 0f, 0f),
+                    isHidden ? new Color(1f, 0.7f, 0.7f, 1f) : new Color(0.95f, 0.9f, 0.8f, 1f), 13,
                     delegate { OnMeshPicked(captured); });
                 y += ROW_H;
             }
 
-            SetBrowserStatus("avatar '" + boundAvatar.name + "' — click a mesh object to add it");
+            SetBrowserStatus(hideMode
+                ? "click a mesh to hide/show it while this item is active"
+                : "avatar '" + boundAvatar.name + "' — click a mesh object to add it");
         }
 
         // ----- blendshape tree (mesh -> shapes) -----

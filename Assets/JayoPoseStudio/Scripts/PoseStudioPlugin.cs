@@ -182,6 +182,13 @@ namespace JayoPoseStudio
             LoadConfig();
             SetupWindow();
             SetupBrowser();
+
+            // Late pass: after the physics have run (they overwrite scale on jiggle bones),
+            // re-apply the pose's bone scale so a "bigger chest"-style toggle still wins.
+            GameObject lateGo = new GameObject("PoseStudioLateScale");
+            lateGo.transform.SetParent(transform, false);
+            lateGo.AddComponent<PoseStudioLateScale>().applier = applier;
+
             Debug.Log("[PoseStudio] initialized. Config: " + configPath);
         }
 

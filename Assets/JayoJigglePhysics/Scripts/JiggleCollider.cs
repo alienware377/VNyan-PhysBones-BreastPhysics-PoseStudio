@@ -43,6 +43,10 @@ namespace JayoJiggle
             b = c - dir * half;
         }
 
+        public Vector3 GetWorldCenter() { return WorldPoint(offset); }
+        public Vector3 GetWorldAxis() { return WorldDir(axis); }
+        public void GetCapsuleEndpoints(out Vector3 a, out Vector3 b) { CapsuleSegment(out a, out b); }
+
         // Pushes p out of the collider. Returns the penetration depth (0 if no contact).
         public float Resolve(ref Vector3 p, float boneRadius)
         {

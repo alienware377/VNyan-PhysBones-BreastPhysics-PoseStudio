@@ -160,8 +160,11 @@ public static class JiggleBuild
         MakeButton(root.transform, "Button_Close", "Close", contentX + 4f * (bw + gap), y, bw, 30f);
         y += 36f;
 
-        MakeButton(root.transform, "Button_ImportColliders", "Import Colliders (from Weight Studio)",
-            contentX, y, contentW, 28f);
+        float hw = (contentW - gap) * 0.5f;
+        MakeButton(root.transform, "Button_ImportColliders", "Import Colliders (Weight Studio)",
+            contentX, y, hw, 28f);
+        MakeButton(root.transform, "Button_ShowColliders", "Show Colliders",
+            contentX + hw + gap, y, hw, 28f);
         y += 28f + P;
 
         rrt.sizeDelta = new Vector2(W, y);

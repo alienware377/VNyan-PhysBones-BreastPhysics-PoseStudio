@@ -50,6 +50,8 @@ namespace JayoPoseStudio
             public Vector3 basePos;
             public Quaternion baseRot;
             public Vector3 baseScale;
+            public Vector3 lastScale = Vector3.one; // final scale this frame (for the late re-apply)
+            public bool usesScale;                  // any active bind drives scale
             public readonly List<BoneBind> binds = new List<BoneBind>();
         }
 
@@ -570,6 +572,7 @@ namespace JayoPoseStudio
                 Vector3 sumPos = Vector3.zero;
                 Quaternion combRot = Quaternion.identity;
                 Vector3 combScale = Vector3.one;
+                bool anyScale = false;
 
                 for (int bi = 0; bi < g.binds.Count; bi++)
                 {
@@ -601,12 +604,16 @@ namespace JayoPoseStudio
                     if (tg.UseRotation)
                         combRot = combRot * Quaternion.Slerp(Quaternion.identity, offRot, a);
                     if (tg.UseScale)
+                    {
                         combScale = Vector3.Scale(combScale, Vector3.Lerp(Vector3.one, offScl, a));
+                        anyScale = true;
+                    }
                 }
 
                 if (maxAmt <= EPS)
                 {
                     g.engaged = false; // released — Animator drives this bone again
+                    g.usesScale = false;
                     continue;
                 }
 
@@ -621,6 +628,8 @@ namespace JayoPoseStudio
                 g.t.localPosition = g.basePos + sumPos;
                 g.t.localRotation = g.baseRot * combRot;
                 g.t.localScale = Vector3.Scale(g.baseScale, combScale);
+                g.usesScale = anyScale;
+                g.lastScale = g.t.localScale;
             }
 
             // 2.5) IK goals — solved AFTER FK so the hips/spine/chest pose is already in
@@ -735,6 +744,21 @@ namespace JayoPoseStudio
             }
         }
 
+        // Re-apply Pose Studio's bone SCALE after the physics have run this frame. Pose Studio
+        // itself applies EARLY (so spring/jiggle physics react to the pose motion), but jiggle
+        // then OVERWRITES localScale on bones it squash/stretches — which are often the same
+        // bones a pose scales (e.g. a "bigger chest" toggle on the breast root). Called from a
+        // late-execution-order component so the pose's scale is the final word on those bones.
+        public void ApplyLateScale()
+        {
+            for (int gi = 0; gi < boneGroups.Count; gi++)
+            {
+                BoneGroup g = boneGroups[gi];
+                if (g.engaged && g.usesScale && g.t != null)
+                    g.t.localScale = g.lastScale;
+            }
+        }
+
         static float SafeAngle(Vector3 u, Vector3 v)
         {
             return Mathf.Acos(Mathf.Clamp(Vector3.Dot(u.normalized, v.normalized), -1f, 1f));
@@ -829,5 +853,14 @@ namespace JayoPoseStudio
                 g.hidden = false;
             }
         }
+    }
+
+    // Runs LATE (after physics) and re-applies the pose's bone scale, so a pose that scales a
+    // jiggle bone (e.g. bigger chest) isn't overwritten by the jiggle solver's own scale.
+    [DefaultExecutionOrder(10000)]
+    public class PoseStudioLateScale : MonoBehaviour
+    {
+        public PoseApplier applier;
+        void LateUpdate() { if (applier != null) applier.ApplyLateScale(); }
     }
 }

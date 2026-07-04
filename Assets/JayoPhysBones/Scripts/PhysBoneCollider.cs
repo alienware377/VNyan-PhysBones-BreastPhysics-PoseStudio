@@ -44,6 +44,10 @@ namespace JayoPhysBones
             b = c - dir * half;
         }
 
+        public Vector3 GetWorldCenter() { return WorldPoint(offset); }
+        public Vector3 GetWorldAxis() { return WorldDir(axis); }
+        public void GetCapsuleEndpoints(out Vector3 a, out Vector3 b) { CapsuleSegment(out a, out b); }
+
         public void Resolve(ref Vector3 p, float boneRadius)
         {
             switch (type)

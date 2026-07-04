@@ -47,6 +47,11 @@ namespace JayoJiggle
         readonly Dictionary<string, JiggleCollider> colliderMap =
             new Dictionary<string, JiggleCollider>();
 
+        // ----- collider visualization -----
+        bool showColliders = false;
+        Material glMat;
+        Text showCollidersText;
+
         // ----- UI state -----
         GameObject window;
         Dropdown boneDropdown;
@@ -70,6 +75,7 @@ namespace JayoJiggle
         void Awake()
         {
             uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            CreateGLMat();
 
             try { VNyanInterface.VNyanInterface.VNyanUI.registerPluginButton(BUTTON_NAME, this); }
             catch (Exception e) { Debug.LogWarning("[Jiggle] registerPluginButton failed: " + e.Message); }
@@ -180,6 +186,13 @@ namespace JayoJiggle
             WireButton("Button_Save", OnSaveClicked);
             WireButton("Button_Close", OnCloseClicked);
             WireButton("Button_ImportColliders", OnImportColliders);
+
+            Button scBtn = FindControl<Button>("Button_ShowColliders");
+            if (scBtn != null)
+            {
+                scBtn.onClick.AddListener(OnToggleColliders);
+                showCollidersText = scBtn.GetComponentInChildren<Text>();
+            }
 
             RefreshBoneList();
             window.SetActive(false);
@@ -449,6 +462,128 @@ namespace JayoJiggle
                 Debug.LogError("[Jiggle] import colliders failed: " + e.Message);
                 SetStatus("Import failed: " + e.Message);
             }
+        }
+
+        void CreateGLMat()
+        {
+            Shader sh = Shader.Find("Hidden/Internal-Colored");
+            if (sh == null) { Debug.LogWarning("[Jiggle] GL shader not found — collider viz unavailable"); return; }
+            glMat = new Material(sh);
+            glMat.hideFlags = HideFlags.HideAndDontSave;
+            glMat.SetInt("_ZWrite", 0);
+            glMat.SetInt("_ZTest", 8); // Always — visible through avatar mesh
+        }
+
+        void OnDestroy()
+        {
+            if (glMat != null) Destroy(glMat);
+        }
+
+        void OnToggleColliders()
+        {
+            showColliders = !showColliders;
+            if (showCollidersText != null)
+                showCollidersText.text = showColliders ? "Hide Colliders" : "Show Colliders";
+            SetStatus(showColliders ? "Collider viz ON — colliders drawn as wireframes" : "Collider viz OFF");
+        }
+
+        void OnRenderObject()
+        {
+            if (!showColliders || glMat == null) return;
+            if (runtimeColliders == null || runtimeColliders.Count == 0) return;
+
+            glMat.SetPass(0);
+            GL.PushMatrix();
+            GL.Begin(GL.LINES);
+
+            for (int i = 0; i < runtimeColliders.Count; i++)
+            {
+                JiggleCollider col = runtimeColliders[i];
+                switch (col.type)
+                {
+                    case JiggleColliderType.Sphere:
+                        GL.Color(new Color(0f, 1f, 0.85f, 1f));
+                        DrawWireSphereGL(col.GetWorldCenter(), col.radius, 20);
+                        break;
+                    case JiggleColliderType.Capsule:
+                        GL.Color(new Color(1f, 0.85f, 0f, 1f));
+                        DrawWireCapsuleGL(col, 16);
+                        break;
+                    case JiggleColliderType.Plane:
+                        GL.Color(new Color(1f, 0.5f, 0f, 1f));
+                        DrawWirePlaneGL(col);
+                        break;
+                }
+            }
+
+            GL.End();
+            GL.PopMatrix();
+        }
+
+        static void DrawWireCircleGL(Vector3 center, Vector3 normal, float r, int segs)
+        {
+            Vector3 u = Vector3.Cross(normal, Vector3.up);
+            if (u.sqrMagnitude < 0.001f) u = Vector3.Cross(normal, Vector3.forward);
+            u.Normalize();
+            Vector3 v = Vector3.Cross(normal, u).normalized;
+            float step = 2f * Mathf.PI / segs;
+            Vector3 prev = center + u * r;
+            for (int i = 1; i <= segs; i++)
+            {
+                float a = i * step;
+                Vector3 next = center + (Mathf.Cos(a) * u + Mathf.Sin(a) * v) * r;
+                GL.Vertex(prev);
+                GL.Vertex(next);
+                prev = next;
+            }
+        }
+
+        static void DrawWireSphereGL(Vector3 center, float r, int segs)
+        {
+            DrawWireCircleGL(center, Vector3.up, r, segs);
+            DrawWireCircleGL(center, Vector3.right, r, segs);
+            DrawWireCircleGL(center, Vector3.forward, r, segs);
+        }
+
+        static void DrawWireCapsuleGL(JiggleCollider col, int segs)
+        {
+            Vector3 a, b;
+            col.GetCapsuleEndpoints(out a, out b);
+            float r = col.radius;
+            Vector3 ax = b - a;
+            if (ax.sqrMagnitude < 1e-8f) { DrawWireSphereGL(a, r, segs); return; }
+            ax.Normalize();
+
+            DrawWireCircleGL(a, ax, r, segs);
+            DrawWireCircleGL(b, ax, r, segs);
+
+            Vector3 u = Vector3.Cross(ax, Vector3.up);
+            if (u.sqrMagnitude < 0.001f) u = Vector3.Cross(ax, Vector3.forward);
+            u.Normalize();
+            Vector3 v = Vector3.Cross(ax, u).normalized;
+
+            GL.Vertex(a + u * r); GL.Vertex(b + u * r);
+            GL.Vertex(a - u * r); GL.Vertex(b - u * r);
+            GL.Vertex(a + v * r); GL.Vertex(b + v * r);
+            GL.Vertex(a - v * r); GL.Vertex(b - v * r);
+        }
+
+        static void DrawWirePlaneGL(JiggleCollider col)
+        {
+            Vector3 c = col.GetWorldCenter();
+            Vector3 n = col.GetWorldAxis();
+            Vector3 u = Vector3.Cross(n, Vector3.up);
+            if (u.sqrMagnitude < 0.001f) u = Vector3.Cross(n, Vector3.forward);
+            u.Normalize();
+            Vector3 v = Vector3.Cross(n, u).normalized;
+            const float sz = 0.15f;
+            for (int i = -2; i <= 2; i++)
+            {
+                float t = i * sz * 0.5f;
+                GL.Vertex(c + u * sz + v * t); GL.Vertex(c - u * sz + v * t);
+                GL.Vertex(c + v * sz + u * t); GL.Vertex(c - v * sz + u * t);
+            }
+            GL.Vertex(c); GL.Vertex(c + n * sz * 1.5f);
         }
 
         void SetStatus(string msg)

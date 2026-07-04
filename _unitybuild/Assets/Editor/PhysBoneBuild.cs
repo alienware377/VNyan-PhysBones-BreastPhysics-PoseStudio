@@ -183,9 +183,12 @@ public static class PhysBoneBuild
         MakeButton(root.transform, "Button_Close", "Close", contentX + 4f * (bw + gap), y, bw, 30f);
         y += 36f;
 
-        // Buttons row 2: Import Colliders (full width — clearly secondary action).
-        MakeButton(root.transform, "Button_ImportColliders", "Import Colliders (from Weight Studio)",
-            contentX, y, contentW, 28f);
+        // Buttons row 2: Import Colliders + Show Colliders (split half/half).
+        float hw = (contentW - gap) * 0.5f;
+        MakeButton(root.transform, "Button_ImportColliders", "Import Colliders (Weight Studio)",
+            contentX, y, hw, 28f);
+        MakeButton(root.transform, "Button_ShowColliders", "Show Colliders",
+            contentX + hw + gap, y, hw, 28f);
         y += 28f + P;
 
         rrt.sizeDelta = new Vector2(W, y);

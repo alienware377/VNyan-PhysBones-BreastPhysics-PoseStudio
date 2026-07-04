@@ -15,7 +15,7 @@ All three work with any VRM model in VNyan. One-click installer, live-tuning win
 |--------|-------------|--------------|
 | **JayoPhysBones** | "VRChat PhysBones" | VRChat-style dynamic bone physics for hair, skirts, tails. Verlet solver, JSON-configured chains, live sliders, bone-tree picker. |
 | **Jiggle Physics** | "Jiggle Physics" | Soft-tissue jiggle (chest / pec / belly) with squash-and-stretch deformation. Leaf-bone solver, volume-preserving scale. |
-| **Pose Studio** | "Pose Studio" | Build bone/mesh toggles and looping animations in VNyan — 2-bone IK so feet and hands stay planted while the body moves, quaternion keyframe channels for imported animation, and per-item mesh hiding for outfit swaps. No Unity, no keyframe editor — pick bones from a tree, dial offsets, hit Save. |
+| **Pose Studio** | "Pose Studio" | Build bone/mesh toggles and looping animations in VNyan — 2-bone IK, quaternion keyframe channels, per-item mesh hiding, **import MMD `.vmd` / BVH / VRMA animations** (with bone translation), and **export/import pose sets** to share. No Unity, no keyframe editor — pick bones from a tree, dial offsets, hit Save. |
 
 All three install together, run in `LateUpdate` independently, and save their configs to your VNyan AppData folder so you never need admin rights to tune or save.
 
@@ -196,7 +196,26 @@ Build **toggles** and **looping animations** from bone / mesh / blendshape offse
 9. **Hide Mesh** — opens the mesh browser with a ☐/☒ toggle per renderer; the picked meshes are **hidden while the item is active** and restored when it turns off. Great for swapping or removing clothing / accessories with a toggle or hotkey.
 10. **Add Blendshape** — opens the same browser in mesh→shape mode. Set **Blend Wt** (0–100). **Remove** drops it.
 11. **IK goals** — add 2-bone IK goals (legs/arms) that pin end effectors in place after FK runs. See the [IK section](#inverse-kinematics-ik) below.
-12. **Reload / Save / Close**.
+12. **Import Animation…** — load an external animation and retarget it onto your rig as a keyframe item (see [below](#importing-animations)).
+13. **Export Poses… / Import Poses…** — share toggles & animations (see [below](#sharing-poses-export--import)).
+14. **Reload / Save / Close**.
+
+### Importing animations
+
+**Import Animation…** loads a motion file, translates its bones onto your avatar's humanoid rig, and creates a keyframe animation item (quaternion channels, resampled to 30 fps). Supported:
+
+- **MMD `.vmd`** — Japanese bone names (センター, 上半身, 左腕, fingers, legs…) → VRM humanoid via a built-in table; **morphs → blendshapes** by name. Because MMD's coordinate convention varies, importing a `.vmd` opens a live **adjustment dialog** — the animation plays on your avatar while you click orientation **presets (A–E)**, **Mirror L/R**, **Face 180°**, and **Lay flat (±90°)** until it looks right, then **Keep this** or **Cancel**.
+- **BVH** — Mixamo / Rokoko / Blender joints (handles `mixamorig:` prefixes and common aliases).
+- **VRMA / `.glb` / `.gltf`** — reads the VRM-animation humanoid map directly (near 1:1).
+
+Only the bones your rig actually has are driven; the status line reports how many bones/morphs mapped. Then **Save**, **Activate** to play.
+
+### Sharing poses (export / import)
+
+- **Export Poses…** — opens a checklist of your items; tick the toggles/animations to share, then export a `.json` (same schema as `posestudio.json`, just the selected items).
+- **Import Poses…** — pick a shared `.json`. Items are **appended** to your existing ones. If any name already exists, a dialog asks whether to **Overwrite same-named**, **Keep both (rename imported)**, or **Skip same-named** — so imports never silently clobber your own work.
+
+> **Physics + Pose Studio dances:** Pose Studio applies its pose *early* in the frame (before physics), so spring/jiggle bones — native VRM SpringBone, PhysBones, and Jiggle — react to a Pose Studio animation the same as they would to face-tracked motion.
 
 ### Configuring (`posestudio.json`)
 

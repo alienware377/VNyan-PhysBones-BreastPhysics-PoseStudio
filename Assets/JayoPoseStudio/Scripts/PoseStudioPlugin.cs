@@ -79,6 +79,12 @@ namespace JayoPoseStudio
     // drive bone position/rotation/scale offsets and blendshape weights. Bones are picked
     // from a collapsible model tree (same approach as the PhysBones plugin); blendshapes are
     // picked from a mesh -> shape tree. Everything saves to a shareable JSON file in AppData.
+    // Apply the pose EARLY in LateUpdate (negative order) so the avatar's spring/jiggle
+    // physics — native VRM SpringBone, PhysBones, Jiggle, all at default order — run AFTER
+    // the dance is posed and therefore react to it. Without this, when Pose Studio (not face
+    // tracking) drives the body, the springs may simulate before the pose is applied and never
+    // see the motion, so hair/tail/breast look frozen.
+    [DefaultExecutionOrder(-100)]
     public class PoseStudioPlugin : MonoBehaviour, VNyanInterface.IButtonClickedHandler
     {
         const string BUTTON_NAME = "Pose Studio";
@@ -329,6 +335,9 @@ namespace JayoPoseStudio
             WireButton("Button_AddBone", OnAddBoneClicked);
             WireButton("Button_AddMesh", OnAddMeshClicked);
             WireButton("Button_HideMesh", OnHideMeshClicked);
+            WireButton("Button_ImportAnim", OnImportAnimClicked);
+            WireButton("Button_ExportPoses", OnExportPosesClicked);
+            WireButton("Button_ImportPoses", OnImportPosesClicked);
             WireButton("Button_RemoveBone", OnRemoveBone);
             WireButton("Button_AddKey", OnAddKeyframe);
             WireButton("Button_RemoveKey", OnRemoveKeyframe);
@@ -585,6 +594,126 @@ namespace JayoPoseStudio
 
         void OnNewToggle() { CreateItem("toggle"); }
         void OnNewAnim() { CreateItem("animation"); }
+
+        // ----- import animation (.vmd / .bvh / .vrma) -----
+        void OnImportAnimClicked()
+        {
+            if (boundAvatar == null || boundAnimator == null) { SetStatus("load a humanoid avatar first"); return; }
+            string path = NativeFileDialog.OpenFile("Import animation (MMD .vmd / .bvh / VRM .vrma)", null,
+                "Animation (*.vmd;*.bvh;*.vrma;*.glb;*.gltf)", "*.vmd;*.bvh;*.vrma;*.glb;*.gltf");
+            if (string.IsNullOrEmpty(path)) return;
+
+            // MMD .vmd opens the live adjust dialog (orientation is finicky); others import directly.
+            if (path.ToLowerInvariant().EndsWith(".vmd")) { StartMmdImport(path); return; }
+
+            string report;
+            PoseItem it = AnimImport.Import(path, boundAvatar, boundAnimator, out report);
+            if (it == null) { SetStatus("import failed: " + report); return; }
+            if (config == null) config = new PoseConfig();
+            if (config.items == null) config.items = new List<PoseItem>();
+            it.name = UniqueItemName(it.name);
+            config.items.Add(it);
+
+            Rebind();
+            RefreshItemListKeepIndex(config.items.Count - 1);
+            SetStatus(report + " Press Save to keep, then Activate to play.");
+        }
+
+        // ----- MMD (.vmd) live-adjust import -----
+        AnimImport.VmdRaw mmdRaw;
+        AnimImport.MmdOpts mmdOpts;
+        int mmdIndex = -1;
+
+        void StartMmdImport(string path)
+        {
+            string report;
+            mmdRaw = AnimImport.ParseVmd(path, out report);
+            if (mmdRaw == null || mmdRaw.mappedBones == 0)
+            {
+                SetStatus("MMD import failed: " + (mmdRaw == null ? report : "no known MMD bones found"
+                    + (mmdRaw != null && !mmdRaw.sjOk ? " (Shift-JIS unavailable)" : "")));
+                mmdRaw = null; return;
+            }
+            mmdOpts = new AnimImport.MmdOpts();
+            if (config == null) config = new PoseConfig();
+            if (config.items == null) config.items = new List<PoseItem>();
+            PoseItem it = AnimImport.BuildVmd(mmdRaw, mmdOpts, boundAnimator);
+            it.name = UniqueItemName(it.name); it.active = true;     // play it so the dialog previews live
+            config.items.Add(it);
+            mmdIndex = config.items.Count - 1;
+            Rebind();
+            RefreshItemListKeepIndex(mmdIndex);
+            OpenBrowser("mmdadjust");
+        }
+
+        void RebuildMmdItem()
+        {
+            if (mmdRaw == null || mmdIndex < 0 || mmdIndex >= config.items.Count) return;
+            string keepName = config.items[mmdIndex].name;
+            PoseItem it = AnimImport.BuildVmd(mmdRaw, mmdOpts, boundAnimator);
+            it.name = keepName; it.active = true;
+            config.items[mmdIndex] = it;
+            Rebind();
+        }
+
+        void BuildMmdAdjustTree(ref float y)
+        {
+            string[] presetNames = { "A · default", "B · flip X/Y", "C · flip Y/Z", "D · flip X/W", "E · raw" };
+            GameObject h = NewRow("Mmd_Hdr", y);
+            MakeRuntimeButton(h.transform, "Orientation preset — click each and watch, keep the one that looks right:",
+                INDENT, 0f, 1000f, ROW_H, new Color(0,0,0,0), new Color(0.85f,0.9f,1f,1f), 12, delegate {});
+            y += ROW_H + 4f;
+            int count = AnimImport.MmdPresetCount;
+            for (int i = 0; i < count && i < presetNames.Length; i++)
+            {
+                bool cur = mmdOpts.preset == i;
+                int pi = i;
+                GameObject row = NewRow("Mmd_P" + i, y);
+                MakeRuntimeButton(row.transform, (cur ? "● " : "○ ") + presetNames[i], INDENT, 0f, 1000f, ROW_H + 2f,
+                    cur ? new Color(0.25f,0.4f,0.5f,1f) : new Color(0.18f,0.18f,0.2f,1f),
+                    new Color(0.95f,0.95f,0.95f,1f), 13, delegate { mmdOpts.preset = pi; RebuildMmdItem(); RebuildTree(); });
+                y += ROW_H + 6f;
+            }
+            y += 4f;
+            MmdToggleRow(ref y, "Mirror left / right", mmdOpts.mirror, delegate { mmdOpts.mirror = !mmdOpts.mirror; RebuildMmdItem(); RebuildTree(); });
+            MmdToggleRow(ref y, "Face 180° (turned around)", mmdOpts.face180, delegate { mmdOpts.face180 = !mmdOpts.face180; RebuildMmdItem(); RebuildTree(); });
+            MmdToggleRow(ref y, "Lay flat / stand up (±90° X)", mmdOpts.layFlat, delegate { mmdOpts.layFlat = !mmdOpts.layFlat; RebuildMmdItem(); RebuildTree(); });
+            y += 8f;
+            GameObject ap = NewRow("Mmd_Apply", y);
+            MakeRuntimeButton(ap.transform, "✔  Keep this", INDENT, 0f, 480f, ROW_H + 4f,
+                new Color(0.2f,0.45f,0.25f,1f), new Color(0.9f,1f,0.9f,1f), 13, delegate { ApplyMmd(); });
+            MakeRuntimeButton(ap.transform, "✖  Cancel import", INDENT + 500f, 0f, 480f, ROW_H + 4f,
+                new Color(0.45f,0.2f,0.2f,1f), new Color(1f,0.9f,0.9f,1f), 13, delegate { CancelMmd(); });
+            y += ROW_H + 12f;
+            SetBrowserStatus("mapped " + mmdRaw.mappedBones + " bones, " + mmdRaw.morphs.Count + " morphs ("
+                + mmdRaw.duration.ToString("0.0") + "s)" + (mmdRaw.sjOk ? "" : " — Shift-JIS unavailable, JP names may be unmatched"));
+        }
+
+        void MmdToggleRow(ref float y, string label, bool on, UnityEngine.Events.UnityAction act)
+        {
+            GameObject row = NewRow("Mmd_T_" + label, y);
+            MakeRuntimeButton(row.transform, (on ? "☒ " : "☐ ") + label, INDENT, 0f, 1000f, ROW_H,
+                new Color(0,0,0,0), on ? new Color(0.8f,1f,0.8f,1f) : new Color(0.85f,0.85f,0.85f,1f), 13, act);
+            y += ROW_H + 4f;
+        }
+
+        void ApplyMmd()
+        {
+            if (mmdIndex >= 0 && mmdIndex < config.items.Count) config.items[mmdIndex].active = false;
+            CloseBrowser();
+            SetStatus("MMD animation imported — press Save to keep, then Activate to play.");
+            mmdRaw = null; mmdIndex = -1;
+        }
+
+        void CancelMmd()
+        {
+            if (mmdIndex >= 0 && mmdIndex < config.items.Count) config.items.RemoveAt(mmdIndex);
+            mmdRaw = null; mmdIndex = -1;
+            CloseBrowser();
+            Rebind();
+            RefreshItemList();
+            SetStatus("MMD import cancelled");
+        }
 
         void CreateItem(string type)
         {
@@ -1684,6 +1813,14 @@ namespace JayoPoseStudio
                     browserTitle.text = "Blendshapes — pick one to add";
                 else if (mode == "mesh")
                     browserTitle.text = "Mesh Objects — pick one to add";
+                else if (mode == "hidemesh")
+                    browserTitle.text = "Hide Meshes — toggle which to hide";
+                else if (mode == "export")
+                    browserTitle.text = "Export Poses — tick items, then Export";
+                else if (mode == "importconflict")
+                    browserTitle.text = "Import — some names already exist";
+                else if (mode == "mmdadjust")
+                    browserTitle.text = "MMD Import — adjust orientation (previews live)";
                 else
                     browserTitle.text = "Model Bones — pick one to add";
             }
@@ -1701,6 +1838,133 @@ namespace JayoPoseStudio
             if (browserStatus != null) browserStatus.text = msg;
         }
 
+        // ===== Export / Import Pose Studio items (share toggles & animations) =====
+        readonly HashSet<string> exportSel = new HashSet<string>();
+        List<PoseItem> pendingImport;
+        List<string> importCollisions;
+
+        void OnExportPosesClicked()
+        {
+            if (config == null || config.items == null || config.items.Count == 0) { SetStatus("nothing to export"); return; }
+            exportSel.Clear();
+            for (int i = 0; i < config.items.Count; i++) if (config.items[i] != null) exportSel.Add(config.items[i].name);
+            OpenBrowser("export");
+        }
+
+        void BuildExportTree(ref float y)
+        {
+            int n = (config != null && config.items != null) ? config.items.Count : 0;
+            GameObject arow = NewRow("Export_Do", y);
+            MakeRuntimeButton(arow.transform, "➤  Export " + exportSel.Count + " selected…", INDENT, 0f, 1000f, ROW_H + 2f,
+                new Color(0.2f, 0.45f, 0.25f, 1f), new Color(0.9f, 1f, 0.9f, 1f), 13, delegate { DoExport(); });
+            y += ROW_H + 8f;
+            for (int i = 0; i < n; i++)
+            {
+                PoseItem it = config.items[i]; if (it == null) continue;
+                bool sel = exportSel.Contains(it.name);
+                string label = (sel ? "☒ " : "☐ ") + it.name + "  (" + it.type + ")";
+                GameObject row = NewRow("Exp_" + i, y);
+                string nm = it.name;
+                MakeRuntimeButton(row.transform, label, INDENT, 0f, 1000f, ROW_H,
+                    new Color(0, 0, 0, 0), sel ? new Color(0.8f, 1f, 0.8f, 1f) : new Color(0.9f, 0.85f, 0.75f, 1f), 13,
+                    delegate { if (exportSel.Contains(nm)) exportSel.Remove(nm); else exportSel.Add(nm); RebuildTree(); });
+                y += ROW_H;
+            }
+            SetBrowserStatus("tick the toggles / animations to share, then Export");
+        }
+
+        void DoExport()
+        {
+            if (exportSel.Count == 0) { SetBrowserStatus("select at least one item"); return; }
+            string path = NativeFileDialog.SaveFile("Export Pose Studio items", "my_poses.json", "json",
+                "Pose Studio (*.json)", "*.json");
+            if (string.IsNullOrEmpty(path)) return;
+            PoseConfig outCfg = new PoseConfig();
+            outCfg.items = new List<PoseItem>();
+            for (int i = 0; i < config.items.Count; i++)
+                if (config.items[i] != null && exportSel.Contains(config.items[i].name)) outCfg.items.Add(config.items[i]);
+            try { File.WriteAllText(path, JsonConvert.SerializeObject(outCfg, Formatting.Indented)); }
+            catch (System.Exception e) { SetStatus("export failed: " + e.Message); return; }
+            CloseBrowser();
+            SetStatus("exported " + outCfg.items.Count + " item(s) to " + Path.GetFileName(path));
+        }
+
+        void OnImportPosesClicked()
+        {
+            string path = NativeFileDialog.OpenFile("Import Pose Studio items", null, "Pose Studio (*.json)", "*.json");
+            if (string.IsNullOrEmpty(path)) return;
+            PoseConfig incoming;
+            try { incoming = JsonConvert.DeserializeObject<PoseConfig>(File.ReadAllText(path)); }
+            catch (System.Exception e) { SetStatus("import failed: " + e.Message); return; }
+            if (incoming == null || incoming.items == null || incoming.items.Count == 0) { SetStatus("no items found in file"); return; }
+            if (config == null) config = new PoseConfig();
+            if (config.items == null) config.items = new List<PoseItem>();
+
+            HashSet<string> existing = new HashSet<string>();
+            for (int i = 0; i < config.items.Count; i++) if (config.items[i] != null) existing.Add(config.items[i].name);
+            pendingImport = incoming.items;
+            importCollisions = new List<string>();
+            for (int i = 0; i < pendingImport.Count; i++)
+                if (pendingImport[i] != null && existing.Contains(pendingImport[i].name)) importCollisions.Add(pendingImport[i].name);
+
+            if (importCollisions.Count == 0) { FinalizeImport("append"); return; }
+            OpenBrowser("importconflict");
+        }
+
+        void BuildConflictTree(ref float y)
+        {
+            int nc = importCollisions != null ? importCollisions.Count : 0;
+            int total = pendingImport != null ? pendingImport.Count : 0;
+            MakeConflictAction(ref y, "Overwrite same-named (" + nc + ")", new Color(0.5f, 0.3f, 0.2f, 1f), delegate { FinalizeImport("overwrite"); });
+            MakeConflictAction(ref y, "Keep both (rename imported)", new Color(0.25f, 0.4f, 0.5f, 1f), delegate { FinalizeImport("keepboth"); });
+            MakeConflictAction(ref y, "Skip same-named (append " + (total - nc) + ")", new Color(0.35f, 0.35f, 0.35f, 1f), delegate { FinalizeImport("skip"); });
+            MakeConflictAction(ref y, "Cancel", new Color(0.3f, 0.2f, 0.2f, 1f), delegate { CloseBrowser(); });
+            y += 6f;
+            for (int i = 0; i < nc; i++)
+            {
+                GameObject row = NewRow("Conf_" + i, y);
+                MakeRuntimeButton(row.transform, "• " + importCollisions[i], INDENT, 0f, 1000f, ROW_H,
+                    new Color(0, 0, 0, 0), new Color(1f, 0.8f, 0.6f, 1f), 12, delegate { });
+                y += ROW_H;
+            }
+            SetBrowserStatus(nc + " of " + total + " imported item(s) share a name with an existing one");
+        }
+
+        void MakeConflictAction(ref float y, string label, Color col, UnityEngine.Events.UnityAction act)
+        {
+            GameObject row = NewRow("Act_" + label, y);
+            MakeRuntimeButton(row.transform, label, INDENT, 0f, 1000f, ROW_H + 4f, col, new Color(0.95f, 0.95f, 0.95f, 1f), 13, act);
+            y += ROW_H + 8f;
+        }
+
+        void FinalizeImport(string mode)
+        {
+            if (pendingImport == null) { CloseBrowser(); return; }
+            int added = 0, replaced = 0, skipped = 0;
+            HashSet<string> collide = importCollisions != null ? new HashSet<string>(importCollisions) : new HashSet<string>();
+            for (int i = 0; i < pendingImport.Count; i++)
+            {
+                PoseItem it = pendingImport[i]; if (it == null) continue;
+                bool clash = collide.Contains(it.name);
+                if (!clash) { config.items.Add(it); added++; continue; }
+                if (mode == "overwrite")
+                {
+                    int idx = -1;
+                    for (int j = 0; j < config.items.Count; j++) if (config.items[j] != null && config.items[j].name == it.name) { idx = j; break; }
+                    if (idx >= 0) { config.items[idx] = it; replaced++; } else { config.items.Add(it); added++; }
+                }
+                else if (mode == "keepboth") { it.name = UniqueItemName(it.name); config.items.Add(it); added++; }
+                else { skipped++; }
+            }
+            pendingImport = null; importCollisions = null;
+            CloseBrowser();
+            Rebind();
+            RefreshItemListKeepIndex(0);
+            SetStatus("imported: " + added + " added"
+                + (replaced > 0 ? ", " + replaced + " overwritten" : "")
+                + (skipped > 0 ? ", " + skipped + " skipped" : "") + " — Save to keep.");
+        }
+
         const float ROW_H = 22f;
         const float INDENT = 14f;
 
@@ -1709,6 +1973,11 @@ namespace JayoPoseStudio
             if (browserContent == null) return;
             for (int i = browserContent.childCount - 1; i >= 0; i--)
                 Destroy(browserContent.GetChild(i).gameObject);
+
+            // item export / import-conflict / MMD-adjust pickers don't need an avatar tree
+            if (browserMode == "export") { float ye = 0f; BuildExportTree(ref ye); browserContent.sizeDelta = new Vector2(0f, ye); return; }
+            if (browserMode == "importconflict") { float yc = 0f; BuildConflictTree(ref yc); browserContent.sizeDelta = new Vector2(0f, yc); return; }
+            if (browserMode == "mmdadjust") { float ym = 0f; BuildMmdAdjustTree(ref ym); browserContent.sizeDelta = new Vector2(0f, ym); return; }
 
             if (boundAvatar == null)
             {

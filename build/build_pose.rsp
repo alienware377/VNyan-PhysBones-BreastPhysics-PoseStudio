@@ -17,4 +17,6 @@
 "Assets\JayoPoseStudio\Scripts\PoseUtil.cs"
 "Assets\JayoPoseStudio\Scripts\PoseApplier.cs"
 "Assets\JayoPoseStudio\Scripts\PoseWindowDrag.cs"
+"Assets\JayoPoseStudio\Scripts\NativeFileDialog.cs"
+"Assets\JayoPoseStudio\Scripts\AnimImport.cs"
 "Assets\JayoPoseStudio\Scripts\PoseStudioPlugin.cs"

@@ -228,6 +228,14 @@ public static class PoseStudioBuild
         MakeButton(c, "Button_RemoveItem", "Remove", cX + 2f * (b3 + gap), y, b3, 28f);
         y += 34f;
 
+        MakeButton(c, "Button_ImportAnim", "Import Animation…  (.vmd / .bvh / .vrma)", cX, y, cW, 26f);
+        y += 30f;
+
+        float b2 = (cW - gap) / 2f;
+        MakeButton(c, "Button_ExportPoses", "Export Poses…", cX, y, b2, 26f);
+        MakeButton(c, "Button_ImportPoses", "Import Poses…", cX + (b2 + gap), y, b2, 26f);
+        y += 30f;
+
         // Name field.
         MakeText(c, "Lbl_Name", "Name", cX, y, 70f, 28f,
             12, TextAnchor.MiddleLeft, FontStyle.Normal);

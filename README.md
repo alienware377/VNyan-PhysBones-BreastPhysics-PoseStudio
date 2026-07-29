@@ -3,9 +3,9 @@
 > **v2.0.0 rebrand:** the plugins are now named **PhysBones**, **JigglePhysics** and
 > **PoseStudio** (previously Jayo-prefixed — renamed out of respect for
 > [Jayo](https://github.com/jayo-exe)'s brand; the originals that inspired this project
-> are his). **Updating from v1.x:** delete the old `Jayo*.dll` / `Jayo*.vnobj` files from
-> your `Items\Assemblies` folders before copying the v2 files in — your settings JSONs
-> are unaffected and carry over.
+> are his). **Updating from v1.x:** just run `install.bat` — it retires the old
+> `Jayo*.dll` / `Jayo*.vnobj` files automatically (manual installs: delete them yourself
+> before copying v2 in). Your settings JSONs are unaffected and carry over.
 
 [![Latest Release](https://img.shields.io/github/v/release/alienware377/VNyan-PhysBones-BreastPhysics-PoseStudio?label=download&color=brightgreen)](https://github.com/alienware377/VNyan-PhysBones-BreastPhysics-PoseStudio/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -32,13 +32,18 @@ All three install together, run in `LateUpdate` independently, and save their co
 
 > **The prebuilt files in `dist/` load on VNyan's Unity 2022.3 runtime. You don't need Unity or a compiler.**
 
-1. Download or clone this repository.
-2. Double-click **`INSTALL_PORTABLE.bat`**.  
-   It will ask for Administrator permission (needed to write into `Program Files\VNyan`), then open a folder browser so you can point it at your VNyan install.
-3. Fully close VNyan (check the system tray), then relaunch it.
-4. Open the **Plugins** window — you should see buttons for **VRChat PhysBones**, **Jiggle Physics**, and **Pose Studio**.
-
-> If your VNyan is at the default location (`C:\Program Files\VNyan`), you can use **`INSTALL.bat`** instead — it skips the folder picker.
+1. Download the latest release zip (or clone this repository) and unzip it anywhere.
+2. Fully close VNyan (check the system tray), then double-click **`install.bat`**.
+3. The installer finds VNyan at `C:\Program Files\VNyan` automatically, or lets you
+   **browse to your VNyan folder** if you installed it somewhere else (itch.io app,
+   portable drive, custom path...).
+4. Admin rights are requested **only if your VNyan folder is write-protected** (like the
+   default Program Files location) — portable and user-folder installs never see a UAC
+   prompt.
+5. Updating from v1.x? The installer automatically retires the old `Jayo*` plugin files
+   so both versions can't load at once. Your settings carry over.
+6. Launch VNyan and open the **Plugins** window — you should see buttons for
+   **VRChat PhysBones**, **Jiggle Physics**, and **Pose Studio**.
 
 ### If the Plugins panel is empty after installing
 

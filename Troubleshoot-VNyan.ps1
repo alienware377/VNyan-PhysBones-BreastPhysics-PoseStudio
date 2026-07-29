@@ -1,7 +1,7 @@
 # =============================================================================
 #  Troubleshoot-VNyan.ps1
 #
-#  Read-only diagnostic for the JayoPhysBones / Jiggle Physics / Pose Studio
+#  Read-only diagnostic for the PhysBones / Jiggle Physics / Pose Studio
 #  plugins. It does NOT change anything. It writes a report file you can send
 #  back so the problem can be pinpointed.
 #
@@ -109,9 +109,9 @@ function Get-BundleUnityVersion([string]$path) {
 Section "3. Installed plugin files"
 
 $plugins = @(
-    @{ Name='VRChat PhysBones'; Folder='JayoPhysBones';  Dll='JayoPhysBones.dll';     Vnobj='JayoPhysBones.vnobj' }
-    @{ Name='Jiggle Physics';   Folder='JigglePhysics';  Dll='JayoJigglePhysics.dll'; Vnobj='JayoJigglePhysics.vnobj' }
-    @{ Name='Pose Studio';      Folder='PoseStudio';     Dll='JayoPoseStudio.dll';    Vnobj='JayoPoseStudio.vnobj' }
+    @{ Name='VRChat PhysBones'; Folder='PhysBones';      Dll='PhysBones.dll';         Vnobj='PhysBones.vnobj' }
+    @{ Name='Jiggle Physics';   Folder='JigglePhysics';  Dll='JigglePhysics.dll';     Vnobj='JigglePhysics.vnobj' }
+    @{ Name='Pose Studio';      Folder='PoseStudio';     Dll='PoseStudio.dll';        Vnobj='PoseStudio.vnobj' }
 )
 $asmRoot = Join-Path $VNyan 'Items\Assemblies'
 $mismatch = $false

@@ -495,7 +495,7 @@ GameObject:
   - component: {fileID: 7530859141786446461}
   - component: {fileID: 4760078035549763382}
   - component: {fileID: 2561239620510638867}
-  - component: {fileID: 6812784345205636900}
+  - component: {fileID: 6114284915454975469}
   m_Layer: 0
   m_Name: JigglePhysicsBoneBrowser
   m_TagString: Untagged
@@ -564,7 +564,7 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
---- !u!114 &6812784345205636900
+--- !u!114 &6114284915454975469
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -573,7 +573,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 8183473220311409213}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: -191350574, guid: ed98d62f99fb59a408d92f1803cd0f88, type: 3}
+  m_Script: {fileID: 1204897591, guid: 36587f621f16508488d9876d268ce79f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
 --- !u!1 &8686089573844526710

@@ -10,8 +10,8 @@ public static class JiggleBuild
     {
         const string windowPrefabPath = "Assets/JigglePhysicsWindow.prefab";
         const string browserPrefabPath = "Assets/JigglePhysicsBoneBrowser.prefab";
-        const string starterPrefabPath = "Assets/JayoJigglePhysicsStarter.prefab";
-        const string bundleName = "jayojigglephysics";
+        const string starterPrefabPath = "Assets/JigglePhysicsStarter.prefab";
+        const string bundleName = "jigglephysics_bundle";
         const string outDir = "AssetBundles";
 
         GameObject windowAsset = BuildWindowPrefab(windowPrefabPath);
@@ -19,7 +19,7 @@ public static class JiggleBuild
 
         // VNyan loads the autostarter by addressable name "vnyanitem"; root GameObject "VNyanTemp".
         GameObject go = new GameObject("VNyanTemp");
-        JayoJiggle.JigglePhysicsPlugin plugin = go.AddComponent<JayoJiggle.JigglePhysicsPlugin>();
+        JigglePhysics.JigglePhysicsPlugin plugin = go.AddComponent<JigglePhysics.JigglePhysicsPlugin>();
         plugin.windowPrefab = windowAsset;
         plugin.boneBrowserPrefab = browserAsset;
         GameObject starterAsset = PrefabUtility.SaveAsPrefabAsset(go, starterPrefabPath);
@@ -45,7 +45,7 @@ public static class JiggleBuild
         }
 
         string built = Path.Combine(outDir, bundleName);
-        string final = Path.Combine(outDir, "JayoJigglePhysics.vnobj");
+        string final = Path.Combine(outDir, "JigglePhysics.vnobj");
         if (File.Exists(final)) File.Delete(final);
         File.Copy(built, final);
         Debug.Log("[JiggleBuild] wrote " + final);
@@ -97,7 +97,7 @@ public static class JiggleBuild
         bg.type = Image.Type.Sliced;
         bg.color = new Color(0.12f, 0.13f, 0.16f, 0.96f);
 
-        root.AddComponent<JayoJiggle.JiggleWindowDrag>();
+        root.AddComponent<JigglePhysics.JiggleWindowDrag>();
 
         float y = 10f;
 
@@ -198,7 +198,7 @@ public static class JiggleBuild
         bg.type = Image.Type.Sliced;
         bg.color = new Color(0.12f, 0.13f, 0.16f, 0.97f);
 
-        root.AddComponent<JayoJiggle.JiggleWindowDrag>();
+        root.AddComponent<JigglePhysics.JiggleWindowDrag>();
 
         float y = 10f;
 

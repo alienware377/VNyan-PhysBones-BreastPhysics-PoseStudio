@@ -9,26 +9,26 @@ if %errorlevel% neq 0 (
 )
 
 set "SRC=%~dp0dist"
-set "DST=C:\Program Files\VNyan\Items\Assemblies\JayoPhysBones"
+set "DST=C:\Program Files\VNyan\Items\Assemblies\PhysBones"
 set "DST2=C:\Program Files\VNyan\Items\Assemblies\JigglePhysics"
 set "DST3=C:\Program Files\VNyan\Items\Assemblies\PoseStudio"
 
-echo Installing JayoPhysBones into VNyan...
+echo Installing PhysBones into VNyan...
 if not exist "%DST%" mkdir "%DST%"
-copy /Y "%SRC%\JayoPhysBones.dll"   "%DST%\"            || goto :fail
-copy /Y "%SRC%\JayoPhysBones.vnobj" "%DST%\"            || goto :fail
+copy /Y "%SRC%\PhysBones.dll"   "%DST%\"            || goto :fail
+copy /Y "%SRC%\PhysBones.vnobj" "%DST%\"            || goto :fail
 copy /Y "%SRC%\physbones.json"      "C:\Program Files\VNyan\" || goto :fail
 
 echo Installing Jiggle Physics into VNyan...
 if not exist "%DST2%" mkdir "%DST2%"
-copy /Y "%SRC%\JayoJigglePhysics.dll"   "%DST2%\"      || goto :fail
-copy /Y "%SRC%\JayoJigglePhysics.vnobj" "%DST2%\"      || goto :fail
+copy /Y "%SRC%\JigglePhysics.dll"   "%DST2%\"      || goto :fail
+copy /Y "%SRC%\JigglePhysics.vnobj" "%DST2%\"      || goto :fail
 copy /Y "%SRC%\jigglephysics.json"      "C:\Program Files\VNyan\" || goto :fail
 
 echo Installing Pose Studio into VNyan...
 if not exist "%DST3%" mkdir "%DST3%"
-copy /Y "%SRC%\JayoPoseStudio.dll"   "%DST3%\"         || goto :fail
-copy /Y "%SRC%\JayoPoseStudio.vnobj" "%DST3%\"         || goto :fail
+copy /Y "%SRC%\PoseStudio.dll"   "%DST3%\"         || goto :fail
+copy /Y "%SRC%\PoseStudio.vnobj" "%DST3%\"         || goto :fail
 copy /Y "%SRC%\posestudio.json"      "C:\Program Files\VNyan\" || goto :fail
 
 echo.

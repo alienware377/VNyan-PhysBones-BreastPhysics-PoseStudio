@@ -22,7 +22,7 @@ if %errorlevel% neq 0 (
 )
 
 set "SRC=%~dp0dist"
-if not exist "%SRC%\JayoPoseStudio.vnobj" (
+if not exist "%SRC%\PoseStudio.vnobj" (
     echo.
     echo *** Could not find the dist\ folder next to this file. ***
     echo     Keep INSTALL_PORTABLE.bat in the same folder as dist\.
@@ -39,7 +39,7 @@ powershell -NoProfile -Command "Get-ChildItem -LiteralPath '%~dp0' -Recurse -Fil
 
 echo.
 echo ============================================================
-echo   JayoPhysBones + Jiggle Physics + Pose Studio
+echo   PhysBones + Jiggle Physics + Pose Studio
 echo   Portable installer (no Unity needed)
 echo ============================================================
 echo.
@@ -74,27 +74,27 @@ if not exist "%VNYAN%\VNyan_Data\Managed\VNyanInterface.dll" (
     exit /b 1
 )
 
-set "DST=%VNYAN%\Items\Assemblies\JayoPhysBones"
+set "DST=%VNYAN%\Items\Assemblies\PhysBones"
 set "DST2=%VNYAN%\Items\Assemblies\JigglePhysics"
 set "DST3=%VNYAN%\Items\Assemblies\PoseStudio"
 
 echo.
 echo Installing VRChat PhysBones...
 if not exist "%DST%" mkdir "%DST%"
-copy /Y "%SRC%\JayoPhysBones.dll"   "%DST%\"  || goto :fail
-copy /Y "%SRC%\JayoPhysBones.vnobj" "%DST%\"  || goto :fail
+copy /Y "%SRC%\PhysBones.dll"   "%DST%\"  || goto :fail
+copy /Y "%SRC%\PhysBones.vnobj" "%DST%\"  || goto :fail
 if not exist "%VNYAN%\physbones.json" copy /Y "%SRC%\physbones.json" "%VNYAN%\" >nul
 
 echo Installing Jiggle Physics...
 if not exist "%DST2%" mkdir "%DST2%"
-copy /Y "%SRC%\JayoJigglePhysics.dll"   "%DST2%\" || goto :fail
-copy /Y "%SRC%\JayoJigglePhysics.vnobj" "%DST2%\" || goto :fail
+copy /Y "%SRC%\JigglePhysics.dll"   "%DST2%\" || goto :fail
+copy /Y "%SRC%\JigglePhysics.vnobj" "%DST2%\" || goto :fail
 if not exist "%VNYAN%\jigglephysics.json" copy /Y "%SRC%\jigglephysics.json" "%VNYAN%\" >nul
 
 echo Installing Pose Studio...
 if not exist "%DST3%" mkdir "%DST3%"
-copy /Y "%SRC%\JayoPoseStudio.dll"   "%DST3%\" || goto :fail
-copy /Y "%SRC%\JayoPoseStudio.vnobj" "%DST3%\" || goto :fail
+copy /Y "%SRC%\PoseStudio.dll"   "%DST3%\" || goto :fail
+copy /Y "%SRC%\PoseStudio.vnobj" "%DST3%\" || goto :fail
 if not exist "%VNYAN%\posestudio.json" copy /Y "%SRC%\posestudio.json" "%VNYAN%\" >nul
 
 REM --- unblock again at the destination, in case copy carried the MotW tag ---

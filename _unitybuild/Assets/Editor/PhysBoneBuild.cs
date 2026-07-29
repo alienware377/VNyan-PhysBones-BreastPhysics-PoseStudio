@@ -10,8 +10,8 @@ public static class PhysBoneBuild
     {
         const string windowPrefabPath = "Assets/PhysBonesWindow.prefab";
         const string browserPrefabPath = "Assets/PhysBonesBoneBrowser.prefab";
-        const string starterPrefabPath = "Assets/JayoPhysBonesStarter.prefab";
-        const string bundleName = "jayophysbones";
+        const string starterPrefabPath = "Assets/PhysBonesStarter.prefab";
+        const string bundleName = "physbones_bundle";
         const string outDir = "AssetBundles";
 
         // 1) Build the tuning window prefab (panel + sliders).
@@ -24,7 +24,7 @@ public static class PhysBoneBuild
         //    VNyan loads the autostarter by the addressable asset name "vnyanitem" and
         //    the root GameObject is named "VNyanTemp" (matches the official SDK output).
         GameObject go = new GameObject("VNyanTemp");
-        JayoPhysBones.PhysBonePlugin plugin = go.AddComponent<JayoPhysBones.PhysBonePlugin>();
+        PhysBones.PhysBonePlugin plugin = go.AddComponent<PhysBones.PhysBonePlugin>();
         plugin.windowPrefab = windowAsset;
         plugin.boneBrowserPrefab = browserAsset;
         GameObject starterAsset = PrefabUtility.SaveAsPrefabAsset(go, starterPrefabPath);
@@ -52,7 +52,7 @@ public static class PhysBoneBuild
         }
 
         string built = Path.Combine(outDir, bundleName);
-        string final = Path.Combine(outDir, "JayoPhysBones.vnobj");
+        string final = Path.Combine(outDir, "PhysBones.vnobj");
         if (File.Exists(final)) File.Delete(final);
         File.Copy(built, final);
         Debug.Log("[PhysBoneBuild] wrote " + final);
@@ -107,7 +107,7 @@ public static class PhysBoneBuild
         bg.color = new Color(0.13f, 0.13f, 0.15f, 0.96f);
 
         // Drag-to-move the whole window (sliders consume their own drags).
-        root.AddComponent<JayoPhysBones.WindowDrag>();
+        root.AddComponent<PhysBones.WindowDrag>();
 
         float y = 10f;
 
@@ -226,7 +226,7 @@ public static class PhysBoneBuild
         bg.type = Image.Type.Sliced;
         bg.color = new Color(0.13f, 0.13f, 0.15f, 0.97f);
 
-        root.AddComponent<JayoPhysBones.WindowDrag>();
+        root.AddComponent<PhysBones.WindowDrag>();
 
         float y = 10f;
 

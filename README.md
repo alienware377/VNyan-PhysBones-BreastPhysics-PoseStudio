@@ -1,5 +1,12 @@
 # VNyan Physics Plugins
 
+> **v2.0.0 rebrand:** the plugins are now named **PhysBones**, **JigglePhysics** and
+> **PoseStudio** (previously Jayo-prefixed — renamed out of respect for
+> [Jayo](https://github.com/jayo-exe)'s brand; the originals that inspired this project
+> are his). **Updating from v1.x:** delete the old `Jayo*.dll` / `Jayo*.vnobj` files from
+> your `Items\Assemblies` folders before copying the v2 files in — your settings JSONs
+> are unaffected and carry over.
+
 [![Latest Release](https://img.shields.io/github/v/release/alienware377/VNyan-PhysBones-BreastPhysics-PoseStudio?label=download&color=brightgreen)](https://github.com/alienware377/VNyan-PhysBones-BreastPhysics-PoseStudio/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -13,7 +20,7 @@ All three work with any VRM model in VNyan. One-click installer, live-tuning win
 
 | Plugin | Button name | What it does |
 |--------|-------------|--------------|
-| **JayoPhysBones** | "VRChat PhysBones" | VRChat-style dynamic bone physics for hair, skirts, tails. Verlet solver, JSON-configured chains, live sliders, bone-tree picker. |
+| **PhysBones** | "VRChat PhysBones" | VRChat-style dynamic bone physics for hair, skirts, tails. Verlet solver, JSON-configured chains, live sliders, bone-tree picker. |
 | **Jiggle Physics** | "Jiggle Physics" | Soft-tissue jiggle (chest / pec / belly) with squash-and-stretch deformation. Leaf-bone solver, volume-preserving scale. |
 | **Pose Studio** | "Pose Studio" | Build bone/mesh toggles and looping animations in VNyan — 2-bone IK, quaternion keyframe channels, per-item mesh hiding, **import MMD `.vmd` / BVH / VRMA animations** (with bone translation), and **export/import pose sets** to share. No Unity, no keyframe editor — pick bones from a tree, dial offsets, hit Save. |
 
@@ -57,7 +64,7 @@ The plugin searches these locations in order and loads the first it finds:
 
 1. `%USERPROFILE%\AppData\LocalLow\Suvidriel\VNyan\physbones.json` ← your saved/edited copy
 2. `…\VNyan\physbones.json`
-3. `…\VNyan\Items\Assemblies\JayoPhysBones\physbones.json`
+3. `…\VNyan\Items\Assemblies\PhysBones\physbones.json`
 
 **Save** in the tuning window always writes to location 1 (no admin needed). Once saved there, that copy wins on every future load. The file is the shareable artifact — send it to anyone and they drop it in.
 

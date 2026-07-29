@@ -10,15 +10,15 @@ public static class PoseStudioBuild
     {
         const string windowPrefabPath = "Assets/PoseStudioWindow.prefab";
         const string browserPrefabPath = "Assets/PoseStudioBrowser.prefab";
-        const string starterPrefabPath = "Assets/JayoPoseStudioStarter.prefab";
-        const string bundleName = "jayoposestudio";
+        const string starterPrefabPath = "Assets/PoseStudioStarter.prefab";
+        const string bundleName = "posestudio_bundle";
         const string outDir = "AssetBundles";
 
         GameObject windowAsset = BuildWindowPrefab(windowPrefabPath);
         GameObject browserAsset = BuildBrowserPrefab(browserPrefabPath);
 
         GameObject go = new GameObject("VNyanTemp");
-        JayoPoseStudio.PoseStudioPlugin plugin = go.AddComponent<JayoPoseStudio.PoseStudioPlugin>();
+        PoseStudio.PoseStudioPlugin plugin = go.AddComponent<PoseStudio.PoseStudioPlugin>();
         plugin.windowPrefab = windowAsset;
         plugin.browserPrefab = browserAsset;
         GameObject starterAsset = PrefabUtility.SaveAsPrefabAsset(go, starterPrefabPath);
@@ -44,7 +44,7 @@ public static class PoseStudioBuild
         }
 
         string built = Path.Combine(outDir, bundleName);
-        string final = Path.Combine(outDir, "JayoPoseStudio.vnobj");
+        string final = Path.Combine(outDir, "PoseStudio.vnobj");
         if (File.Exists(final)) File.Delete(final);
         File.Copy(built, final);
         Debug.Log("[PoseStudioBuild] wrote " + final);
@@ -56,13 +56,13 @@ public static class PoseStudioBuild
     // InputField so we can see why their text won't render.
     public static void Diagnose()
     {
-        string path = "AssetBundles/JayoPoseStudio.vnobj";
+        string path = "AssetBundles/PoseStudio.vnobj";
         AssetBundle b = AssetBundle.LoadFromFile(path);
         if (b == null) { Debug.LogError("[Diag] could not load " + path); EditorApplication.Exit(2); return; }
 
         GameObject starter = b.LoadAsset<GameObject>("vnyanitem");
         if (starter == null) { Debug.LogError("[Diag] no vnyanitem asset"); b.Unload(true); EditorApplication.Exit(2); return; }
-        JayoPoseStudio.PoseStudioPlugin pl = starter.GetComponent<JayoPoseStudio.PoseStudioPlugin>();
+        PoseStudio.PoseStudioPlugin pl = starter.GetComponent<PoseStudio.PoseStudioPlugin>();
         if (pl == null) { Debug.LogError("[Diag] no PoseStudioPlugin on vnyanitem"); b.Unload(true); EditorApplication.Exit(2); return; }
         GameObject root = pl.windowPrefab;
         if (root == null) { Debug.LogError("[Diag] windowPrefab is null"); b.Unload(true); EditorApplication.Exit(2); return; }
@@ -146,7 +146,7 @@ public static class PoseStudioBuild
         bg.type = Image.Type.Sliced;
         bg.color = new Color(0.12f, 0.13f, 0.16f, 0.97f);
 
-        root.AddComponent<JayoPoseStudio.PoseWindowDrag>();
+        root.AddComponent<PoseStudio.PoseWindowDrag>();
 
         // ---------- header (fixed) ----------
         float hy = 10f;
@@ -470,7 +470,7 @@ public static class PoseStudioBuild
         bg.type = Image.Type.Sliced;
         bg.color = new Color(0.12f, 0.13f, 0.16f, 0.98f);
 
-        root.AddComponent<JayoPoseStudio.PoseWindowDrag>();
+        root.AddComponent<PoseStudio.PoseWindowDrag>();
 
         float y = 10f;
 

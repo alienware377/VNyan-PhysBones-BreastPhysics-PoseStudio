@@ -16,6 +16,14 @@ namespace JayoPoseStudio
     public class PoseSettings
     {
         public bool enabled = true;
+
+        // ----- Idle animation (auto-play on tracking loss) -----
+        // Tracking loss is detected by watching the head bone for fresh tracker motion: if it
+        // hasn't moved more than `idleMotionThreshold` degrees/frame for `idleDelay` seconds,
+        // tracking is considered lost and the item flagged `idleAnim` auto-plays (unless a
+        // "major" animation is already on). Both are JSON-tunable.
+        public float idleDelay = 1.5f;             // seconds of stillness before idle kicks in
+        public float idleMotionThreshold = 0.02f;  // degrees/frame of head motion = "tracking alive"
     }
 
     // Common surface for anything that offsets a Transform (a bone or a mesh object).
@@ -227,6 +235,11 @@ namespace JayoPoseStudio
         public float speed = 1.0f;       // animation cycles per second (wave mode)
         public string waveform = "sine"; // "sine" | "triangle" | "pulse"
         public string hotkey = "";       // e.g. "F8" or "Ctrl+Shift+E"; empty = unbound
+
+        // Idle animation: auto-plays when tracking is lost AND no other MAJOR animation is
+        // active (major = keyframe animation with >2 keyframes driving >4 major humanoid
+        // bones, fingers/toes excluded). Only one item should carry this flag.
+        public bool idleAnim = false;
 
         // ----- Keyframe timeline -----
         // When enabled (animation items only), the item's strength follows a custom

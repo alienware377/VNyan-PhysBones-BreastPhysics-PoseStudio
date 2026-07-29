@@ -186,6 +186,7 @@ namespace JayoJiggle
             WireButton("Button_Save", OnSaveClicked);
             WireButton("Button_Close", OnCloseClicked);
             WireButton("Button_ImportColliders", OnImportColliders);
+            WireButton("Button_ClearColliders", OnClearColliders);
 
             Button scBtn = FindControl<Button>("Button_ShowColliders");
             if (scBtn != null)
@@ -434,26 +435,46 @@ namespace JayoJiggle
                 if (config == null) config = new JiggleConfig();
                 if (config.colliders == null) config.colliders = new List<JiggleColliderConfig>();
 
-                HashSet<string> existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                // name -> index of existing collider, so re-imports replace rather than skip
+                Dictionary<string, int> existing = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                 for (int i = 0; i < config.colliders.Count; i++)
                     if (config.colliders[i] != null && !string.IsNullOrEmpty(config.colliders[i].name))
-                        existing.Add(config.colliders[i].name);
+                        existing[config.colliders[i].name] = i;
 
-                int added = 0, skipped = 0;
+                int added = 0, replaced = 0;
+                List<string> importedNames = new List<string>();
                 for (int i = 0; i < imported.colliders.Count; i++)
                 {
                     JiggleColliderConfig cc = imported.colliders[i];
                     if (cc == null) continue;
-                    if (!string.IsNullOrEmpty(cc.name) && existing.Contains(cc.name))
-                    { skipped++; continue; }
+                    if (!string.IsNullOrEmpty(cc.name)) importedNames.Add(cc.name);
+                    int at;
+                    if (!string.IsNullOrEmpty(cc.name) && existing.TryGetValue(cc.name, out at))
+                    { config.colliders[at] = cc; replaced++; continue; }
                     config.colliders.Add(cc);
-                    if (!string.IsNullOrEmpty(cc.name)) existing.Add(cc.name);
+                    if (!string.IsNullOrEmpty(cc.name)) existing[cc.name] = config.colliders.Count - 1;
                     added++;
                 }
 
+                // A bone only collides with colliders named in its own list, so attach the
+                // imported set to every jiggle bone — otherwise the import has no effect.
+                int attached = 0;
+                if (config.bones != null)
+                {
+                    foreach (JiggleBoneConfig bc in config.bones)
+                    {
+                        if (bc == null) continue;
+                        if (bc.colliders == null) bc.colliders = new List<string>();
+                        HashSet<string> have = new HashSet<string>(bc.colliders, StringComparer.OrdinalIgnoreCase);
+                        foreach (string cn in importedNames)
+                            if (have.Add(cn)) { bc.colliders.Add(cn); attached++; }
+                    }
+                }
+
                 RebindAll();
-                string msg = "Imported " + added + " collider(s) from " + Path.GetFileName(chosen);
-                if (skipped > 0) msg += " (" + skipped + " skipped: name already exists)";
+                string msg = "Imported " + added + " new collider(s) from " + Path.GetFileName(chosen);
+                if (replaced > 0) msg += " (" + replaced + " replaced with new values)";
+                if (attached > 0) msg += ", attached to all jiggle bones";
                 msg += " — Save to keep";
                 SetStatus(msg);
             }
@@ -464,14 +485,33 @@ namespace JayoJiggle
             }
         }
 
+        void OnClearColliders()
+        {
+            int n = (config != null && config.colliders != null) ? config.colliders.Count : 0;
+            if (n == 0) { SetStatus("No colliders to remove."); return; }
+            config.colliders.Clear();
+            if (config.bones != null)
+                foreach (JiggleBoneConfig bc in config.bones)
+                    if (bc != null && bc.colliders != null) bc.colliders.Clear();
+            RebindAll();
+            SetStatus("Removed " + n + " collider(s) from all jiggle bones — Save to keep");
+        }
+
         void CreateGLMat()
         {
+            // "Hidden/Internal-Colored" is often stripped from player builds (VNyan is one),
+            // so fall back to shaders a uGUI app always ships.
             Shader sh = Shader.Find("Hidden/Internal-Colored");
-            if (sh == null) { Debug.LogWarning("[Jiggle] GL shader not found — collider viz unavailable"); return; }
+            if (sh == null) sh = Shader.Find("Sprites/Default");
+            if (sh == null) sh = Shader.Find("UI/Default");
+            if (sh == null) sh = Shader.Find("Unlit/Color");
+            if (sh == null) { Debug.LogWarning("[Jiggle] No GL shader found — collider viz unavailable"); return; }
             glMat = new Material(sh);
             glMat.hideFlags = HideFlags.HideAndDontSave;
             glMat.SetInt("_ZWrite", 0);
             glMat.SetInt("_ZTest", 8); // Always — visible through avatar mesh
+            glMat.SetInt("_Cull", 0);
+            Debug.Log("[Jiggle] GL collider material using shader: " + sh.name);
         }
 
         void OnDestroy()
@@ -484,6 +524,9 @@ namespace JayoJiggle
             showColliders = !showColliders;
             if (showCollidersText != null)
                 showCollidersText.text = showColliders ? "Hide Colliders" : "Show Colliders";
+            Debug.Log("[Jiggle] ShowColliders toggled -> " + showColliders
+                + " (glMat=" + (glMat != null ? glMat.shader.name : "NULL")
+                + ", colliders=" + (runtimeColliders != null ? runtimeColliders.Count : 0) + ")");
             SetStatus(showColliders ? "Collider viz ON — colliders drawn as wireframes" : "Collider viz OFF");
         }
 

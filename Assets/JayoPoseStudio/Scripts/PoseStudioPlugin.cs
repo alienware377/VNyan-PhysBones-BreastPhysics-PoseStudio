@@ -134,6 +134,7 @@ namespace JayoPoseStudio
         InputField nameInput;
         Toggle enabledToggle;
         Toggle activeToggle;
+        Toggle idleToggle;
         Toggle animToggle;
         Toggle usePosToggle;
         Toggle useRotToggle;
@@ -224,7 +225,9 @@ namespace JayoPoseStudio
 
             float dt = Mathf.Min(Time.deltaTime, 1f / 30f);
             if (dt <= 0f) return;
+            UpdateIdle();          // sample tracked head BEFORE we pose; auto start/stop idle anim
             applier.Apply(dt);
+            SampleAppliedHead();   // remember what we wrote so next frame can tell tracker vs us
         }
 
         // ========================= main window =========================
@@ -255,6 +258,7 @@ namespace JayoPoseStudio
             nameInput = FindControl<InputField>("Input_Name");
             enabledToggle = FindControl<Toggle>("Toggle_Enabled");
             activeToggle = FindControl<Toggle>("Toggle_Active");
+            idleToggle = FindControl<Toggle>("Toggle_IdleAnim");
             animToggle = FindControl<Toggle>("Toggle_Anim");
             usePosToggle = FindControl<Toggle>("Toggle_UsePos");
             useRotToggle = FindControl<Toggle>("Toggle_UseRot");
@@ -320,6 +324,7 @@ namespace JayoPoseStudio
             }
             if (enabledToggle != null) enabledToggle.onValueChanged.AddListener(OnEnabledToggled);
             if (activeToggle != null) activeToggle.onValueChanged.AddListener(OnActiveToggled);
+            if (idleToggle != null) idleToggle.onValueChanged.AddListener(OnIdleToggled);
             if (animToggle != null) animToggle.onValueChanged.AddListener(OnAnimToggled);
             if (usePosToggle != null) usePosToggle.onValueChanged.AddListener(OnUsePosToggled);
             if (useRotToggle != null) useRotToggle.onValueChanged.AddListener(OnUseRotToggled);
@@ -522,6 +527,7 @@ namespace JayoPoseStudio
 
             if (nameInput != null) nameInput.text = selectedItem.name == null ? "" : selectedItem.name;
             if (activeToggle != null) activeToggle.isOn = selectedItem.active;
+            if (idleToggle != null) idleToggle.isOn = selectedItem.idleAnim;
             if (animToggle != null) animToggle.isOn = selectedItem.type == "animation";
             if (waveDropdown != null)
             {
@@ -580,6 +586,156 @@ namespace JayoPoseStudio
         {
             if (suppressCallbacks || selectedItem == null) return;
             selectedItem.active = on;
+            // manual control of the idle item overrides the auto state
+            if (selectedItem.idleAnim) { idleAutoOn = false; idleSuppressed = !on; }
+        }
+
+        void OnIdleToggled(bool on)
+        {
+            if (suppressCallbacks || selectedItem == null) return;
+            if (on && selectedItem.type != "animation")
+            {
+                suppressCallbacks = true;
+                if (idleToggle != null) idleToggle.isOn = false;
+                suppressCallbacks = false;
+                SetStatus("idle animation must be an animation item");
+                return;
+            }
+            selectedItem.idleAnim = on;
+            if (on)
+            {
+                // only one idle item at a time
+                for (int i = 0; i < config.items.Count; i++)
+                    if (config.items[i] != null && !ReferenceEquals(config.items[i], selectedItem))
+                        config.items[i].idleAnim = false;
+                SetStatus("'" + selectedItem.name + "' will auto-play when tracking is lost — Save to keep");
+            }
+            else SetStatus("idle animation cleared");
+            RecomputeIdleCaches();
+        }
+
+        // ===== Idle animation engine =====
+        // Auto-plays the item flagged `idleAnim` when tracking is lost and no other MAJOR
+        // animation is active. Tracking loss = the head bone stops receiving fresh motion:
+        // live face tracking jitters the head constantly; when the tracker disconnects the
+        // animator's output freezes (or stops being written). We sample the head at the START
+        // of LateUpdate (animator has written, we haven't), ignore frames where the value is
+        // just our own last write, and time out after settings.idleDelay seconds.
+        PoseItem idleItem;                       // cached: the flagged item
+        readonly List<PoseItem> majorItems = new List<PoseItem>();  // cached: "major" animations
+        Quaternion prevHeadSample = Quaternion.identity;
+        Quaternion lastAppliedHead = Quaternion.identity;
+        bool headSampleValid, lastAppliedValid;
+        float lastMotionTime = -1f;
+        bool idleAutoOn;                         // we turned the idle item on (so we may turn it off)
+        bool idleSuppressed;                     // user manually stopped it; re-arm on next real motion
+
+        void RecomputeIdleCaches()
+        {
+            idleItem = null;
+            majorItems.Clear();
+            if (config == null || config.items == null) return;
+            for (int i = 0; i < config.items.Count; i++)
+            {
+                PoseItem it = config.items[i];
+                if (it == null) continue;
+                if (it.idleAnim && idleItem == null) idleItem = it;
+                else if (IsMajorAnim(it)) majorItems.Add(it);
+            }
+        }
+
+        // Major = keyframe animation with >2 keyframes driving >4 major humanoid bones
+        // (fingers and toes excluded).
+        bool IsMajorAnim(PoseItem it)
+        {
+            if (it == null || it.type != "animation") return false;
+            if (!it.useKeyframes || it.keyframes == null || it.keyframes.Count <= 2) return false;
+            if (it.bones == null || boundAnimator == null || !boundAnimator.isHuman) return false;
+            HashSet<HumanBodyBones> majors = new HashSet<HumanBodyBones>();
+            for (int b = 0; b < it.bones.Count; b++)
+            {
+                BoneTarget bt = it.bones[b];
+                if (bt == null || string.IsNullOrEmpty(bt.bone)) continue;
+                Transform tr = PoseUtil.Find(boundAvatar.transform, boundAnimator, bt.bone);
+                if (tr == null) continue;
+                HumanBodyBones hb;
+                if (!humanBoneOf.TryGetValue(tr, out hb)) continue;
+                int idx = (int)hb;
+                if (hb == HumanBodyBones.LeftToes || hb == HumanBodyBones.RightToes) continue;
+                if (idx >= (int)HumanBodyBones.LeftThumbProximal && idx <= (int)HumanBodyBones.RightLittleDistal) continue;
+                majors.Add(hb);
+            }
+            return majors.Count > 4;
+        }
+
+        // reverse map transform -> humanoid bone, rebuilt when the avatar (re)binds
+        readonly Dictionary<Transform, HumanBodyBones> humanBoneOf = new Dictionary<Transform, HumanBodyBones>();
+        void RebuildHumanBoneMap()
+        {
+            humanBoneOf.Clear();
+            if (boundAnimator == null || !boundAnimator.isHuman) return;
+            for (int b = 0; b < (int)HumanBodyBones.LastBone; b++)
+            {
+                Transform t = boundAnimator.GetBoneTransform((HumanBodyBones)b);
+                if (t != null && !humanBoneOf.ContainsKey(t)) humanBoneOf[t] = (HumanBodyBones)b;
+            }
+        }
+
+        void UpdateIdle()
+        {
+            if (idleItem == null || boundAnimator == null || !boundAnimator.isHuman) return;
+            Transform head = boundAnimator.GetBoneTransform(HumanBodyBones.Head);
+            if (head == null) return;
+
+            Quaternion cur = head.localRotation;
+
+            // Was this frame's value written by something other than us last frame?
+            bool externalWrite = !lastAppliedValid || Quaternion.Angle(cur, lastAppliedHead) > 0.0005f;
+            if (externalWrite && headSampleValid)
+            {
+                float thresh = config.settings != null ? config.settings.idleMotionThreshold : 0.02f;
+                if (Quaternion.Angle(cur, prevHeadSample) > thresh)
+                {
+                    lastMotionTime = Time.time;
+                    idleSuppressed = false;      // real motion re-arms the auto behaviour
+                }
+            }
+            if (externalWrite) { prevHeadSample = cur; headSampleValid = true; }
+            else if (!headSampleValid) { prevHeadSample = cur; headSampleValid = true; }
+            if (lastMotionTime < 0f) lastMotionTime = Time.time;   // assume alive at start
+
+            float delay = config.settings != null ? config.settings.idleDelay : 1.5f;
+            bool lost = (Time.time - lastMotionTime) > Mathf.Max(0.2f, delay);
+
+            bool majorOn = false;
+            for (int i = 0; i < majorItems.Count; i++)
+                if (majorItems[i].active) { majorOn = true; break; }
+
+            // user turned the idle item off while we had it on -> stand down until motion returns
+            if (idleAutoOn && !idleItem.active) { idleAutoOn = false; idleSuppressed = true; }
+
+            bool want = lost && !majorOn && !idleSuppressed;
+            if (want && !idleItem.active)
+            {
+                idleItem.active = true; idleAutoOn = true;
+                if (ReferenceEquals(selectedItem, idleItem) && activeToggle != null)
+                { suppressCallbacks = true; activeToggle.isOn = true; suppressCallbacks = false; }
+            }
+            else if (!want && idleItem.active && idleAutoOn)
+            {
+                idleItem.active = false; idleAutoOn = false;
+                if (ReferenceEquals(selectedItem, idleItem) && activeToggle != null)
+                { suppressCallbacks = true; activeToggle.isOn = false; suppressCallbacks = false; }
+            }
+        }
+
+        void SampleAppliedHead()
+        {
+            if (boundAnimator == null || !boundAnimator.isHuman) { lastAppliedValid = false; return; }
+            Transform head = boundAnimator.GetBoneTransform(HumanBodyBones.Head);
+            if (head == null) { lastAppliedValid = false; return; }
+            lastAppliedHead = head.localRotation;
+            lastAppliedValid = true;
         }
 
         void OnAnimToggled(bool on)
@@ -2320,6 +2476,9 @@ namespace JayoPoseStudio
         {
             applier.Bind(boundAvatar, boundAnimator, config);
             restoredWhileDisabled = false;
+            RebuildHumanBoneMap();
+            RecomputeIdleCaches();
+            headSampleValid = false; lastAppliedValid = false;   // fresh idle detection state
         }
 
         // ========================= config IO =========================

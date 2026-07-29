@@ -266,6 +266,10 @@ public static class PoseStudioBuild
 
         MakeToggle(c, "Toggle_Anim", "Animate on a loop (instead of a toggle)",
             cX, y, cW, 24f);
+        y += 26f;
+
+        MakeToggle(c, "Toggle_IdleAnim", "Idle animation (auto-play when tracking is lost)",
+            cX, y, cW, 24f);
         y += 28f;
 
         // Animation params.

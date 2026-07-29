@@ -540,7 +540,11 @@ namespace PoseStudio
                         // interpolate its OWN channel between those poses. `env` is the
                         // overall fade-in/out strength applied on top.
                         float cycle = KeyCycle(it.keyframes);
-                        rt.phase += dt;
+                        // Anim Speed acts as a universal playback-rate multiplier here
+                        // (1 = authored timing, 0.5 = half speed, 2 = double) — it was
+                        // only wired into the wave mode below, so keyframe animations
+                        // (incl. imported MMD/BVH/VRMA) ignored the slider entirely.
+                        rt.phase += Mathf.Max(0f, it.speed) * dt;
                         if (cycle > 0.0001f) rt.phase -= cycle * Mathf.Floor(rt.phase / cycle);
                         else rt.phase = 0f;
                         rt.kfMode = true;

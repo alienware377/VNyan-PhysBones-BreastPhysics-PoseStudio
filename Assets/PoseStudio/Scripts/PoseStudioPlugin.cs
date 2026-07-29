@@ -1959,6 +1959,24 @@ namespace PoseStudio
             PoseKeyframe key = selectedItem.keyframes[idx];
             key.channels = NewKeyframeFromStatic(selectedItem, key.seconds).channels;
         }
+        // Masked capture: only channels whose id passes `allow` are re-captured from the
+        // item's current pose; excluded channels keep their existing keyed values.
+        public void TimelineCaptureIntoMasked(int idx, Func<string, bool> allow)
+        {
+            if (selectedItem == null || selectedItem.keyframes == null ||
+                idx < 0 || idx >= selectedItem.keyframes.Count) return;
+            PoseKeyframe key = selectedItem.keyframes[idx];
+            PoseKeyframe fresh = NewKeyframeFromStatic(selectedItem, key.seconds);
+            if (allow == null) { key.channels = fresh.channels; return; }
+            List<KeyframeChannel> keep = new List<KeyframeChannel>();
+            if (key.channels != null)
+                for (int i = 0; i < key.channels.Count; i++)
+                    if (key.channels[i] != null && !allow(key.channels[i].id)) keep.Add(key.channels[i]);
+            if (fresh.channels != null)
+                for (int i = 0; i < fresh.channels.Count; i++)
+                    if (fresh.channels[i] != null && allow(fresh.channels[i].id)) keep.Add(fresh.channels[i]);
+            key.channels = keep;
+        }
         public void TimelineRemoveKey(int idx)
         {
             if (selectedItem == null || selectedItem.keyframes == null ||

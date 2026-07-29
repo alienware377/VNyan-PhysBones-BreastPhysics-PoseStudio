@@ -185,6 +185,8 @@ namespace PoseStudio
                 c.id = s.id;
                 c.position = Copy3(s.position, 0f);
                 c.rotation = Copy3(s.rotation, 0f);
+                c.quat = s.quat != null && s.quat.Length == 4
+                    ? new float[] { s.quat[0], s.quat[1], s.quat[2], s.quat[3] } : null;
                 c.scale = Copy3(s.scale, 1f);
                 c.weight = s.weight;
                 outList.Add(c);

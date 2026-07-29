@@ -197,6 +197,21 @@ public static class PoseStudioBuild
         Place(pa.transform, root.transform, P + 56f, y + 4f, cw - 56f, 18f);
         y += 28f;
 
+        // lanes row: per-group lanes toggle + vertical lane scroll + capture/paste mask
+        MakeToggle(root.transform, "Toggle_TLLanes", "lanes", P, y, 80f, 24f);
+        MakeText(root.transform, "Lbl_tllscroll", "Lane Scroll", P + 88f, y, 90f, 26f,
+            12, TextAnchor.MiddleLeft, FontStyle.Normal);
+        GameObject lsc = DefaultControls.CreateSlider(_res);
+        lsc.name = "Slider_tllscroll";
+        Slider lscc = lsc.GetComponent<Slider>();
+        lscc.minValue = 0f; lscc.maxValue = 1f; lscc.value = 0f;
+        Place(lsc.transform, root.transform, P + 182f, y + 6f, 260f, 18f);
+        MakeText(root.transform, "Lbl_tlmask", "Capture/Paste Mask:", P + 470f, y, 160f, 26f,
+            12, TextAnchor.MiddleLeft, FontStyle.Normal);
+        MakeButton(root.transform, "Button_TLMaskAll", "All", P + 634f, y, 56f, 26f);
+        MakeButton(root.transform, "Button_TLMaskNone", "None", P + 696f, y, 60f, 26f);
+        y += 30f;
+
         // selected key row
         MakeText(root.transform, "Text_TLKey", "no key selected", P, y, 180f, 26f,
             12, TextAnchor.MiddleLeft, FontStyle.Bold);
@@ -206,10 +221,13 @@ public static class PoseStudioBuild
         MakeText(root.transform, "Lbl_tlease", "Ease to next", P + 386f, y, 100f, 26f,
             12, TextAnchor.MiddleLeft, FontStyle.Normal);
         MakeDropdown(root.transform, "Dropdown_TLEase", P + 490f, y, 140f, 26f);
+        MakeButton(root.transform, "Button_TLCopy", "Copy", P + 640f, y, 60f, 26f);
+        MakeButton(root.transform, "Button_TLPasteInto", "Paste Into", P + 706f, y, 88f, 26f);
+        MakeButton(root.transform, "Button_TLPasteNew", "Paste New", P + 800f, y, 84f, 26f);
         y += 32f;
 
         MakeText(root.transform, "Text_TLStatus",
-            "drag the strip to scrub - drag a diamond to retime - keys stay in sync with the main window",
+            "drag to scrub - lanes shows what each key moves - green/red boxes gate capture and paste",
             P, y, cw, 18f, 10, TextAnchor.MiddleLeft, FontStyle.Italic);
 
         GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, prefabPath);

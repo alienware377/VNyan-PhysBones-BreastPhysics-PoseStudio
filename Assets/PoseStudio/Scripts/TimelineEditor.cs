@@ -44,6 +44,19 @@ namespace PoseStudio
         const float PAD = 12f;          // left/right padding inside the strip content
         const float MIN_SEG = 0.05f;    // minimum segment length (seconds)
 
+        // ----- P2: lanes / capture-paste mask / key clipboard -----
+        float padLeft = PAD;            // time-axis origin; widens in lanes mode to clear the gutter
+        Toggle lanesToggle;
+        Slider laneScrollSlider;
+        readonly HashSet<string> expandedGroups = new HashSet<string>();
+        readonly HashSet<string> maskOff = new HashSet<string>();   // excluded cats ("bone") or full channel ids
+        readonly List<RectTransform> gutterRows = new List<RectTransform>();  // pan-pinned lane labels
+        PoseKeyframe clipboard;         // survives item switches — paste works across items
+        const float GUT_W = 150f;       // gutter (lane label column) width
+        const float LANE_TOP = 26f;     // lanes area starts under the ruler
+        const float LANE_H = 17f;
+        const float LANE_BOT = 129f;
+
         static Font UiFont() { return Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf"); }
 
         // ---------------------------------------------------------------- setup
@@ -96,6 +109,21 @@ namespace PoseStudio
                 easeDrop.AddOptions(new List<string> { "linear", "smooth", "ease in", "ease out" });
                 easeDrop.onValueChanged.AddListener(OnEaseChanged);
             }
+            lanesToggle = FindIn<Toggle>("Toggle_TLLanes");
+            laneScrollSlider = FindIn<Slider>("Slider_tllscroll");
+            if (lanesToggle != null) lanesToggle.onValueChanged.AddListener(delegate(bool v) { if (!suppress) Rebuild(); });
+            if (laneScrollSlider != null) laneScrollSlider.onValueChanged.AddListener(delegate(float v) { if (!suppress) Rebuild(); });
+            Button cpy = FindIn<Button>("Button_TLCopy");
+            if (cpy != null) cpy.onClick.AddListener(OnCopy);
+            Button psi = FindIn<Button>("Button_TLPasteInto");
+            if (psi != null) psi.onClick.AddListener(OnPasteInto);
+            Button psn = FindIn<Button>("Button_TLPasteNew");
+            if (psn != null) psn.onClick.AddListener(OnPasteNew);
+            Button mka = FindIn<Button>("Button_TLMaskAll");
+            if (mka != null) mka.onClick.AddListener(OnMaskAll);
+            Button mkn = FindIn<Button>("Button_TLMaskNone");
+            if (mkn != null) mkn.onClick.AddListener(OnMaskNone);
+
             wired = true;
             window.SetActive(false);
         }
@@ -234,7 +262,7 @@ namespace PoseStudio
         {
             if (!wired || window == null || !window.activeSelf) return;
             for (int i = 0; i < dynamic.Count; i++) if (dynamic[i] != null) UnityEngine.Object.Destroy(dynamic[i]);
-            dynamic.Clear(); keyHandles.Clear();
+            dynamic.Clear(); keyHandles.Clear(); gutterRows.Clear();
             playhead = null; scrubPad = null; stripBar = null;
 
             PoseItem it = boundItem;
@@ -244,17 +272,20 @@ namespace PoseStudio
             builtKeyCount = ks.Count;
             if (title != null) title.text = "Timeline — " + it.name;
 
+            bool lanes = lanesToggle != null && lanesToggle.isOn;
+            padLeft = lanes ? GUT_W + 10f : PAD;
+
             float cycle = Cycle();
             float viewW = view.rect.width;
             if (viewW < 50f) viewW = 860f;
             float zoom = zoomSlider != null ? Mathf.Max(1f, zoomSlider.value) : 1f;
-            pxPerSec = Mathf.Max(20f, (viewW - 2f * PAD) / Mathf.Max(0.05f, cycle)) * zoom;
-            float contentW = cycle * pxPerSec + 2f * PAD;
+            pxPerSec = Mathf.Max(20f, (viewW - padLeft - PAD) / Mathf.Max(0.05f, cycle)) * zoom;
+            float contentW = cycle * pxPerSec + padLeft + PAD;
             content.sizeDelta = new Vector2(contentW, content.sizeDelta.y);
 
             float H = content.sizeDelta.y;            // ~130
             float stripTop = 26f, stripH = 64f;
-            float diamondY = stripTop + stripH * 0.5f;
+            float diamondY = lanes ? LANE_TOP + LANE_H * 0.5f : stripTop + stripH * 0.5f;
 
             // scrub pad: whole-content press/drag surface (behind everything else)
             Image pad = MakeImg(content, "TLScrubPad", 0f, 0f, contentW, H, new Color(1f, 1f, 1f, 0.004f), true);
@@ -263,9 +294,12 @@ namespace PoseStudio
             AddTrigger(pad.gameObject, EventTriggerType.Drag, OnScrub);
             AddTrigger(pad.gameObject, EventTriggerType.PointerUp, delegate(BaseEventData d) { scrubbing = false; });
 
-            // strip bar
-            Image bar = MakeImg(content, "TLStrip", PAD, stripTop, contentW - 2f * PAD, stripH, new Color(0.28f, 0.26f, 0.45f, 1f), false);
-            stripBar = bar.rectTransform; dynamic.Add(bar.gameObject);
+            // strip bar (classic single-strip mode only; lanes mode draws rows instead)
+            if (!lanes)
+            {
+                Image bar = MakeImg(content, "TLStrip", PAD, stripTop, contentW - 2f * PAD, stripH, new Color(0.28f, 0.26f, 0.45f, 1f), false);
+                stripBar = bar.rectTransform; dynamic.Add(bar.gameObject);
+            }
 
             // ruler ticks + labels
             int lblStep = cycle > 120f ? 10 : (cycle > 40f ? 5 : 1);
@@ -273,7 +307,7 @@ namespace PoseStudio
             for (float t = 0f; t <= cycle + 0.001f; t += halfTicks ? 0.5f : 1f)
             {
                 bool whole = Mathf.Abs(t - Mathf.Round(t)) < 0.01f;
-                float x = PAD + t * pxPerSec;
+                float x = padLeft + t * pxPerSec;
                 Image tick = MakeImg(content, "tick", x, whole ? 8f : 14f, 1f, whole ? 16f : 10f, new Color(1f, 1f, 1f, whole ? 0.55f : 0.28f), false);
                 dynamic.Add(tick.gameObject);
                 if (whole && ((int)Mathf.Round(t)) % lblStep == 0)
@@ -283,11 +317,15 @@ namespace PoseStudio
                 }
             }
 
+            // per-group lanes (small change markers behind the master diamonds)
+            List<LaneDef> laneDefs = null;
+            if (lanes) { laneDefs = ComputeLanes(ks); DrawLaneMarkers(ks, laneDefs); }
+
             // key diamonds
             for (int i = 0; i < ks.Count; i++)
             {
                 int idx = i;   // C#5: capture a copy for the closures below
-                float kx = PAD + KeyTime(i) * pxPerSec;
+                float kx = padLeft + KeyTime(i) * pxPerSec;
                 GameObject dgo = new GameObject("TLKey" + i, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
                 Image dim = dgo.GetComponent<Image>();
                 dim.color = new Color(0.36f, 0.83f, 0.66f, 1f);
@@ -300,12 +338,18 @@ namespace PoseStudio
                 AddTrigger(dgo, EventTriggerType.Drag, delegate(BaseEventData d) { OnKeyDrag(idx, (PointerEventData)d); });
                 AddTrigger(dgo, EventTriggerType.PointerUp, delegate(BaseEventData d) { OnKeyUp(idx); });
 
-                Text klbl = MakeTxt(content, (i + 1).ToString(), kx - 20f, stripTop + stripH + 6f, 40f, 14f, 10, TextAnchor.UpperCenter, new Color(1f, 1f, 1f, 0.8f));
-                dynamic.Add(klbl.gameObject);
+                if (!lanes)
+                {
+                    Text klbl = MakeTxt(content, (i + 1).ToString(), kx - 20f, stripTop + stripH + 6f, 40f, 14f, 10, TextAnchor.UpperCenter, new Color(1f, 1f, 1f, 0.8f));
+                    dynamic.Add(klbl.gameObject);
+                }
             }
 
+            // gutter (pinned lane labels + mask boxes) draws over the panning markers
+            if (lanes) DrawLaneGutter(laneDefs);
+
             // playhead
-            Image ph = MakeImg(content, "TLPlayhead", PAD, 4f, 2f, H - 8f, new Color(0.93f, 0.42f, 0.26f, 1f), false);
+            Image ph = MakeImg(content, "TLPlayhead", padLeft, 4f, 2f, H - 8f, new Color(0.93f, 0.42f, 0.26f, 1f), false);
             playhead = ph.rectTransform; dynamic.Add(ph.gameObject);
 
             ApplyPan();
@@ -317,7 +361,12 @@ namespace PoseStudio
             if (content == null || view == null) return;
             float over = content.sizeDelta.x - view.rect.width;
             float pan = (panSlider != null && over > 0f) ? panSlider.value : 0f;
-            content.anchoredPosition = new Vector2(-Mathf.Max(0f, over) * pan, content.anchoredPosition.y);
+            float off = Mathf.Max(0f, over) * pan;
+            content.anchoredPosition = new Vector2(-off, content.anchoredPosition.y);
+            // keep the lane gutter pinned to the view's left edge while the content pans
+            for (int i = 0; i < gutterRows.Count; i++)
+                if (gutterRows[i] != null)
+                    gutterRows[i].anchoredPosition = new Vector2(off, gutterRows[i].anchoredPosition.y);
         }
 
         void RefreshSelection()
@@ -352,7 +401,7 @@ namespace PoseStudio
             float lx;
             if (!PointerToContentX(e, out lx)) return;
             float cycle = Cycle();
-            float t = Mathf.Clamp((lx - PAD) / Mathf.Max(1f, pxPerSec), 0f, Mathf.Max(0f, cycle - 0.0001f));
+            float t = Mathf.Clamp((lx - padLeft) / Mathf.Max(1f, pxPerSec), 0f, Mathf.Max(0f, cycle - 0.0001f));
             scrubbing = true;
             plugin.ApplierRef.SetPaused(boundItem, true);     // scrubbing pauses (Play resumes)
             plugin.ApplierRef.SetPhase(boundItem, t);
@@ -378,7 +427,7 @@ namespace PoseStudio
             if (!PointerToContentX(e, out lx)) return;
             float tPrev = KeyTime(idx - 1);
             float tNextOld = KeyTime(idx) + Mathf.Max(0.01f, ks[idx].seconds);   // fixed for middle keys
-            float newT = SnapTime((lx - PAD) / Mathf.Max(1f, pxPerSec));
+            float newT = SnapTime((lx - padLeft) / Mathf.Max(1f, pxPerSec));
             bool last = idx == ks.Count - 1;
             float hi = last ? tPrev + 30f : tNextOld - MIN_SEG;
             newT = Mathf.Clamp(newT, tPrev + MIN_SEG, hi);
@@ -386,7 +435,7 @@ namespace PoseStudio
             if (!last) ks[idx].seconds = tNextOld - newT;      // keep the next key where it was
             // live-move this diamond (full rebuild on release)
             if (idx < keyHandles.Count && keyHandles[idx] != null)
-                keyHandles[idx].anchoredPosition = new Vector2(PAD + newT * pxPerSec, keyHandles[idx].anchoredPosition.y);
+                keyHandles[idx].anchoredPosition = new Vector2(padLeft + newT * pxPerSec, keyHandles[idx].anchoredPosition.y);
             if (secInput != null && selIdx == idx - 1) secInput.text = ks[idx - 1].seconds.ToString("0.000", CultureInfo.InvariantCulture);
             SetTlStatus("key " + (idx + 1) + " at " + newT.ToString("0.00") + "s");
         }
@@ -458,8 +507,9 @@ namespace PoseStudio
         void OnCapture()
         {
             if (selIdx < 0) { SetTlStatus("select a key first"); return; }
-            plugin.TimelineCaptureInto(selIdx);
-            SetTlStatus("captured the item's current pose into key " + (selIdx + 1));
+            plugin.TimelineCaptureIntoMasked(selIdx, MaskAllows);
+            SetTlStatus("captured the current pose into key " + (selIdx + 1) + (maskOff.Count > 0 ? " (mask applied)" : ""));
+            Rebuild();
         }
 
         void OnDelete()
@@ -547,6 +597,312 @@ namespace PoseStudio
             return c;
         }
 
+        // ---------------------------------------------------------------- P2: lanes
+        // A lane is one row in the lanes view: either a channel GROUP (Bones/Meshes/
+        // Blendshapes/IK, expandable) or one member target inside an expanded group.
+        class LaneDef
+        {
+            public string label;
+            public string cat;    // "bone" | "mesh" | "blend" | "ik"
+            public string id;     // full channel id (member lanes only)
+            public bool group;
+        }
+
+        static string ChanCat(string id)
+        {
+            int c = id != null ? id.IndexOf(':') : -1;
+            return c > 0 ? id.Substring(0, c) : "";
+        }
+
+        static string ChanShort(string id)
+        {
+            if (id == null) return "?";
+            int c = id.IndexOf(':');
+            string body = c >= 0 ? id.Substring(c + 1) : id;
+            int sep = body.IndexOf("::", StringComparison.Ordinal);
+            return sep >= 0 ? body.Substring(sep + 2) : body;
+        }
+
+        static string CatTitle(string cat)
+        {
+            if (cat == "bone") return "Bones";
+            if (cat == "mesh") return "Meshes";
+            if (cat == "blend") return "Blendshapes";
+            if (cat == "ik") return "IK";
+            return cat;
+        }
+
+        List<LaneDef> ComputeLanes(List<PoseKeyframe> ks)
+        {
+            string[] cats = { "bone", "mesh", "blend", "ik" };
+            Dictionary<string, List<string>> members = new Dictionary<string, List<string>>();
+            for (int c = 0; c < cats.Length; c++) members[cats[c]] = new List<string>();
+            HashSet<string> seen = new HashSet<string>();
+            for (int i = 0; i < ks.Count; i++)
+            {
+                PoseKeyframe k = ks[i];
+                if (k == null || k.channels == null) continue;
+                for (int j = 0; j < k.channels.Count; j++)
+                {
+                    KeyframeChannel ch = k.channels[j];
+                    if (ch == null || ch.id == null || seen.Contains(ch.id)) continue;
+                    seen.Add(ch.id);
+                    string cat = ChanCat(ch.id);
+                    if (members.ContainsKey(cat)) members[cat].Add(ch.id);
+                }
+            }
+            List<LaneDef> outLanes = new List<LaneDef>();
+            for (int c = 0; c < cats.Length; c++)
+            {
+                List<string> ids = members[cats[c]];
+                if (ids.Count == 0) continue;
+                bool open = expandedGroups.Contains(cats[c]);
+                LaneDef g = new LaneDef();
+                g.group = true; g.cat = cats[c];
+                g.label = (open ? "- " : "+ ") + CatTitle(cats[c]) + " (" + ids.Count + ")";
+                outLanes.Add(g);
+                if (open)
+                    for (int i = 0; i < ids.Count; i++)
+                    {
+                        LaneDef m = new LaneDef();
+                        m.cat = cats[c]; m.id = ids[i];
+                        m.label = "    " + ChanShort(ids[i]);
+                        outLanes.Add(m);
+                    }
+            }
+            return outLanes;
+        }
+
+        float LaneScrollPx(int count)
+        {
+            float area = LANE_BOT - (LANE_TOP + LANE_H);   // master row is pinned; the rest scroll
+            float total = count * LANE_H;
+            float scroll = laneScrollSlider != null ? laneScrollSlider.value : 0f;
+            return Mathf.Max(0f, total - area) * scroll;
+        }
+
+        // Does key i CHANGE this lane's channel(s) vs the previous key (looping)?
+        bool LaneChangedAt(List<PoseKeyframe> ks, LaneDef lane, int i, out bool present)
+        {
+            present = false;
+            PoseKeyframe cur = ks[i];
+            PoseKeyframe prev = ks[(i - 1 + ks.Count) % ks.Count];
+            if (lane.group)
+            {
+                bool changed = false;
+                if (cur != null && cur.channels != null)
+                    for (int j = 0; j < cur.channels.Count; j++)
+                    {
+                        KeyframeChannel ch = cur.channels[j];
+                        if (ch == null || ChanCat(ch.id) != lane.cat) continue;
+                        present = true;
+                        if (ks.Count > 1 && ChannelsDiffer(KeyChannels.Find(prev, ch.id), ch)) { changed = true; break; }
+                    }
+                return changed;
+            }
+            KeyframeChannel c2 = KeyChannels.Find(cur, lane.id);
+            present = c2 != null;
+            return ks.Count > 1 && ChannelsDiffer(KeyChannels.Find(prev, lane.id), c2);
+        }
+
+        void DrawLaneMarkers(List<PoseKeyframe> ks, List<LaneDef> lanesList)
+        {
+            float scrollPx = LaneScrollPx(lanesList.Count);
+            bool sparse = ks.Count > 60;   // huge imports: only draw the keys that change the lane
+            for (int L = 0; L < lanesList.Count; L++)
+            {
+                float rowY = LANE_TOP + LANE_H + L * LANE_H - scrollPx;
+                if (rowY < LANE_TOP + LANE_H - 0.5f || rowY + LANE_H > LANE_BOT + 0.5f) continue;
+                LaneDef lane = lanesList[L];
+                Image rbg = MakeImg(content, "TLLaneBg" + L, 0f, rowY, content.sizeDelta.x,
+                    LANE_H - 1f, new Color(0.16f, 0.17f, 0.22f, (L % 2 == 0) ? 0.85f : 0.6f), false);
+                dynamic.Add(rbg.gameObject);
+                for (int i = 0; i < ks.Count; i++)
+                {
+                    bool present;
+                    bool changed = LaneChangedAt(ks, lane, i, out present);
+                    if (!present || (sparse && !changed)) continue;
+                    int idx = i;
+                    float kx = padLeft + KeyTime(i) * pxPerSec;
+                    float sz = changed ? 9f : 5f;
+                    GameObject mgo = new GameObject("TLM", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                    Image mim = mgo.GetComponent<Image>();
+                    mim.color = changed ? new Color(0.36f, 0.83f, 0.66f, 1f) : new Color(1f, 1f, 1f, 0.28f);
+                    mim.raycastTarget = true;
+                    RectTransform mrt = PlaceRT(mgo, content, 0f, 0f, sz, sz);
+                    mrt.pivot = new Vector2(0.5f, 0.5f);
+                    mrt.anchoredPosition = new Vector2(kx, -(rowY + LANE_H * 0.5f));
+                    if (changed) mrt.localRotation = Quaternion.Euler(0f, 0f, 45f);
+                    dynamic.Add(mgo);
+                    AddTrigger(mgo, EventTriggerType.PointerDown, delegate(BaseEventData d) { OnKeyDown(idx); });
+                }
+            }
+        }
+
+        void DrawLaneGutter(List<LaneDef> lanesList)
+        {
+            MakeGutterRow(LANE_TOP, "All keys (drag to retime)", null);
+            float scrollPx = LaneScrollPx(lanesList.Count);
+            for (int L = 0; L < lanesList.Count; L++)
+            {
+                float rowY = LANE_TOP + LANE_H + L * LANE_H - scrollPx;
+                if (rowY < LANE_TOP + LANE_H - 0.5f || rowY + LANE_H > LANE_BOT + 0.5f) continue;
+                MakeGutterRow(rowY, lanesList[L].label, lanesList[L]);
+            }
+        }
+
+        void MakeGutterRow(float rowY, string label, LaneDef lane)
+        {
+            GameObject row = new GameObject("TLGut", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            Image rim = row.GetComponent<Image>();
+            rim.color = new Color(0.10f, 0.11f, 0.14f, 0.97f);
+            rim.raycastTarget = lane != null && lane.group;   // group rows click to expand/collapse
+            RectTransform rrt = PlaceRT(row, content, 0f, rowY, GUT_W, LANE_H - 1f);
+            dynamic.Add(row); gutterRows.Add(rrt);
+            MakeTxt(row.transform, label, 4f, 1f, GUT_W - 22f, LANE_H - 2f, 10, TextAnchor.MiddleLeft,
+                new Color(1f, 1f, 1f, lane != null && !lane.group ? 0.75f : 0.95f));
+            if (lane == null) return;
+            if (lane.group)
+            {
+                string cat = lane.cat;
+                AddTrigger(row, EventTriggerType.PointerDown, delegate(BaseEventData d)
+                {
+                    if (expandedGroups.Contains(cat)) expandedGroups.Remove(cat); else expandedGroups.Add(cat);
+                    Rebuild();
+                });
+            }
+            // capture/paste mask box: green = included, red = excluded
+            string maskKey = lane.group ? lane.cat : lane.id;
+            bool allowed = lane.group ? !maskOff.Contains(lane.cat) : MaskAllows(lane.id);
+            LaneDef laneRef = lane;
+            GameObject box = new GameObject("TLMask", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            Image bim = box.GetComponent<Image>();
+            bim.color = allowed ? new Color(0.36f, 0.83f, 0.66f, 0.95f) : new Color(0.6f, 0.25f, 0.25f, 0.95f);
+            bim.raycastTarget = true;
+            PlaceRT(box, row.transform, GUT_W - 16f, (LANE_H - 11f) * 0.5f, 10f, 10f);
+            AddTrigger(box, EventTriggerType.PointerDown, delegate(BaseEventData d)
+            {
+                if (!laneRef.group && maskOff.Contains(laneRef.cat))
+                { SetTlStatus("its whole group is excluded — click the group's box first"); return; }
+                if (maskOff.Contains(maskKey)) maskOff.Remove(maskKey); else maskOff.Add(maskKey);
+                SetTlStatus((maskOff.Contains(maskKey) ? "excluded from" : "included in") + " capture/paste: " + label.Trim());
+                Rebuild();
+            });
+        }
+
+        // ---------------------------------------------------------------- P2: mask
+        public bool MaskAllows(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+            if (maskOff.Contains(id)) return false;
+            return !maskOff.Contains(ChanCat(id));
+        }
+
+        void OnMaskAll()
+        {
+            maskOff.Clear();
+            Rebuild();
+            SetTlStatus("capture/paste mask: everything included");
+        }
+
+        void OnMaskNone()
+        {
+            maskOff.Add("bone"); maskOff.Add("mesh"); maskOff.Add("blend"); maskOff.Add("ik");
+            Rebuild();
+            SetTlStatus("capture/paste mask: everything excluded — tick lanes back on in the lanes view");
+        }
+
+        // ---------------------------------------------------------------- P2: copy/paste
+        static KeyframeChannel CloneChan(KeyframeChannel s)
+        {
+            KeyframeChannel c = new KeyframeChannel();
+            c.id = s.id;
+            c.position = s.position != null ? (float[])s.position.Clone() : null;
+            c.rotation = s.rotation != null ? (float[])s.rotation.Clone() : null;
+            c.quat = s.quat != null ? (float[])s.quat.Clone() : null;
+            c.scale = s.scale != null ? (float[])s.scale.Clone() : null;
+            c.weight = s.weight;
+            return c;
+        }
+
+        static PoseKeyframe DeepCloneKey(PoseKeyframe src)
+        {
+            PoseKeyframe k = new PoseKeyframe();
+            k.seconds = src.seconds;
+            k.ease = src.ease;
+            k.channels = new List<KeyframeChannel>();
+            if (src.channels != null)
+                for (int i = 0; i < src.channels.Count; i++)
+                    if (src.channels[i] != null) k.channels.Add(CloneChan(src.channels[i]));
+            return k;
+        }
+
+        static bool D3(float[] a, float[] b, float fb, float eps)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                float av = a != null && i < a.Length ? a[i] : fb;
+                float bv = b != null && i < b.Length ? b[i] : fb;
+                if (Mathf.Abs(av - bv) > eps) return true;
+            }
+            return false;
+        }
+
+        static bool ChannelsDiffer(KeyframeChannel a, KeyframeChannel b)
+        {
+            if (a == null && b == null) return false;
+            if (a == null || b == null) return true;
+            if (D3(a.position, b.position, 0f, 0.0005f)) return true;
+            if (D3(a.scale, b.scale, 1f, 0.0005f)) return true;
+            if (Mathf.Abs(a.weight - b.weight) > 0.01f) return true;
+            return Quaternion.Angle(ChanQuat(a), ChanQuat(b)) > 0.05f;
+        }
+
+        void OnCopy()
+        {
+            List<PoseKeyframe> ks = Keys();
+            if (ks == null || selIdx < 0 || selIdx >= ks.Count) { SetTlStatus("select a key first"); return; }
+            clipboard = DeepCloneKey(ks[selIdx]);
+            int n = clipboard.channels != null ? clipboard.channels.Count : 0;
+            SetTlStatus("copied key " + (selIdx + 1) + " (" + n + " channels) — paste works across items too");
+        }
+
+        void OnPasteInto()
+        {
+            List<PoseKeyframe> ks = Keys();
+            if (clipboard == null) { SetTlStatus("copy a key first"); return; }
+            if (ks == null || selIdx < 0 || selIdx >= ks.Count) { SetTlStatus("select a key first"); return; }
+            PoseKeyframe key = ks[selIdx];
+            List<KeyframeChannel> keep = new List<KeyframeChannel>();
+            if (key.channels != null)
+                for (int i = 0; i < key.channels.Count; i++)
+                {
+                    KeyframeChannel c = key.channels[i];
+                    if (c != null && !MaskAllows(c.id)) keep.Add(c);   // masked-out channels keep their old values
+                }
+            if (clipboard.channels != null)
+                for (int i = 0; i < clipboard.channels.Count; i++)
+                {
+                    KeyframeChannel c = clipboard.channels[i];
+                    if (c != null && MaskAllows(c.id)) keep.Add(CloneChan(c));
+                }
+            key.channels = keep;
+            key.ease = clipboard.ease;
+            plugin.TimelineSelectKey(selIdx);   // re-push the main window's sliders
+            Rebuild();
+            SetTlStatus("pasted into key " + (selIdx + 1) + (maskOff.Count > 0 ? " (mask applied)" : ""));
+        }
+
+        void OnPasteNew()
+        {
+            if (clipboard == null) { SetTlStatus("copy a key first"); return; }
+            List<PoseKeyframe> ks = Keys();
+            if (boundItem == null || ks == null) return;
+            int at = selIdx >= 0 ? selIdx + 1 : ks.Count;
+            plugin.TimelineInsertKey(at, DeepCloneKey(clipboard));
+            SetTlStatus("pasted a new key at slot " + (at + 1));
+        }
+
         void SetTlStatus(string s) { if (statusText != null) statusText.text = s; }
 
         // ---------------------------------------------------------------- per frame
@@ -568,7 +924,7 @@ namespace PoseStudio
             float cycle = Cycle();
             float phase = Mathf.Repeat(plugin.ApplierRef.GetPhase(boundItem), Mathf.Max(0.01f, cycle));
             if (playhead != null)
-                playhead.anchoredPosition = new Vector2(PAD + phase * pxPerSec, playhead.anchoredPosition.y);
+                playhead.anchoredPosition = new Vector2(padLeft + phase * pxPerSec, playhead.anchoredPosition.y);
             if (timeText != null)
                 timeText.text = phase.ToString("00.000", CultureInfo.InvariantCulture) + " / " + cycle.ToString("00.000", CultureInfo.InvariantCulture) + "s";
             if (playBtnText != null)

@@ -101,6 +101,7 @@ namespace PoseStudio
         // Assigned by the AssetBundle build (PoseStudioBuild.cs).
         public GameObject windowPrefab;
         public GameObject browserPrefab;
+        public GameObject timelinePrefab;
 
         PoseConfig config;
         string configPath;
@@ -164,6 +165,7 @@ namespace PoseStudio
 
         // ----- browser state -----
         GameObject browserWindow;
+        TimelineEditor timeline;
         RectTransform browserContent;
         Text browserStatus;
         Text browserTitle;
@@ -183,6 +185,8 @@ namespace PoseStudio
             LoadConfig();
             SetupWindow();
             SetupBrowser();
+            timeline = new TimelineEditor();
+            timeline.Setup(this, timelinePrefab);
 
             // Late pass: after the physics have run (they overwrite scale on jiggle bones),
             // re-apply the pose's bone scale so a "bigger chest"-style toggle still wins.
@@ -351,6 +355,7 @@ namespace PoseStudio
             WireButton("Button_ExportPoses", OnExportPosesClicked);
             WireButton("Button_ImportPoses", OnImportPosesClicked);
             WireButton("Button_RemoveBone", OnRemoveBone);
+            WireButton("Button_Timeline", delegate() { if (timeline != null) timeline.ToggleVisible(); });
             WireButton("Button_AddKey", OnAddKeyframe);
             WireButton("Button_RemoveKey", OnRemoveKeyframe);
             WireButton("Button_AddBlend", OnAddBlendClicked);
@@ -1273,6 +1278,7 @@ namespace PoseStudio
             if (selectedItem != null && selectedItem.keyframes != null && selectedItem.keyframes.Count > 0)
                 SelectKeyframe(0);
             else { selectedKey = null; PushKeyframeToUI(); }
+            if (timeline != null) timeline.OnKeysChanged();
         }
 
         void OnKeyframeSelected(int index)
@@ -1287,6 +1293,7 @@ namespace PoseStudio
                 index < 0 || index >= selectedItem.keyframes.Count)
             { selectedKey = null; PushKeyframeToUI(); return; }
             selectedKey = selectedItem.keyframes[index];
+            if (timeline != null) timeline.OnPluginKeySelected(index);
             PushKeyframeToUI();
             // Selecting a keyframe re-poses the editor: the Transform and Blendshape sliders
             // now reflect THIS keyframe's stored pose.
@@ -1611,6 +1618,7 @@ namespace PoseStudio
 
         void Update()
         {
+            if (timeline != null) timeline.Frame();
             if (listeningForHotkey) { CaptureHotkey(); return; }
             DetectHotkeys();
         }
@@ -1922,6 +1930,51 @@ namespace PoseStudio
         }
 
         // ========================= browser (bone + blendshape trees) =========================
+
+        // ---------------- timeline editor bridge ----------------
+        // The timeline window is a second VIEW over the same keyframe data; these small
+        // public hooks keep the classic dropdown/slider workflow authoritative.
+        public PoseItem CurrentItem { get { return selectedItem; } }
+        public PoseApplier ApplierRef { get { return applier; } }
+        public void PublicStatus(string msg) { SetStatus(msg); }
+        public int CurrentKeyIndex()
+        {
+            if (selectedItem == null || selectedItem.keyframes == null || selectedKey == null) return -1;
+            return selectedItem.keyframes.IndexOf(selectedKey);
+        }
+        public void TimelineSelectKey(int idx)
+        {
+            if (selectedItem == null || selectedItem.keyframes == null ||
+                idx < 0 || idx >= selectedItem.keyframes.Count) return;
+            suppressCallbacks = true;
+            if (keyframeDropdown != null) { keyframeDropdown.value = idx; keyframeDropdown.RefreshShownValue(); }
+            suppressCallbacks = false;
+            SelectKeyframe(idx);
+        }
+        public void TimelineRefreshOptionText() { RefreshKeyframeOptionText(); }
+        public void TimelineCaptureInto(int idx)
+        {
+            if (selectedItem == null || selectedItem.keyframes == null ||
+                idx < 0 || idx >= selectedItem.keyframes.Count) return;
+            PoseKeyframe key = selectedItem.keyframes[idx];
+            key.channels = NewKeyframeFromStatic(selectedItem, key.seconds).channels;
+        }
+        public void TimelineRemoveKey(int idx)
+        {
+            if (selectedItem == null || selectedItem.keyframes == null ||
+                idx < 0 || idx >= selectedItem.keyframes.Count) return;
+            TimelineSelectKey(idx);
+            OnRemoveKeyframe();
+        }
+        public void TimelineInsertKey(int insertAt, PoseKeyframe key)
+        {
+            if (selectedItem == null || key == null) return;
+            if (selectedItem.keyframes == null) selectedItem.keyframes = new List<PoseKeyframe>();
+            insertAt = Mathf.Clamp(insertAt, 0, selectedItem.keyframes.Count);
+            selectedItem.keyframes.Insert(insertAt, key);
+            RefreshKeyframeList();
+            TimelineSelectKey(insertAt);
+        }
 
         void SetupBrowser()
         {

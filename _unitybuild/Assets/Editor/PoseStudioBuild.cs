@@ -10,17 +10,20 @@ public static class PoseStudioBuild
     {
         const string windowPrefabPath = "Assets/PoseStudioWindow.prefab";
         const string browserPrefabPath = "Assets/PoseStudioBrowser.prefab";
+        const string timelinePrefabPath = "Assets/PoseStudioTimeline.prefab";
         const string starterPrefabPath = "Assets/PoseStudioStarter.prefab";
         const string bundleName = "posestudio_bundle";
         const string outDir = "AssetBundles";
 
         GameObject windowAsset = BuildWindowPrefab(windowPrefabPath);
         GameObject browserAsset = BuildBrowserPrefab(browserPrefabPath);
+        GameObject timelineAsset = BuildTimelinePrefab(timelinePrefabPath);
 
         GameObject go = new GameObject("VNyanTemp");
         PoseStudio.PoseStudioPlugin plugin = go.AddComponent<PoseStudio.PoseStudioPlugin>();
         plugin.windowPrefab = windowAsset;
         plugin.browserPrefab = browserAsset;
+        plugin.timelinePrefab = timelineAsset;
         GameObject starterAsset = PrefabUtility.SaveAsPrefabAsset(go, starterPrefabPath);
         Object.DestroyImmediate(go);
         AssetDatabase.SaveAssets();
@@ -101,6 +104,117 @@ public static class PoseStudioBuild
         Object.DestroyImmediate(inst);
         b.Unload(true);
         EditorApplication.Exit(0);
+    }
+
+    static GameObject BuildTimelinePrefab(string prefabPath)
+    {
+        if (_res.standard == null)
+            _res = new DefaultControls.Resources
+            {
+                standard = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd"),
+                background = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Background.psd"),
+                inputField = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/InputFieldBackground.psd"),
+                knob = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Knob.psd"),
+                checkmark = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Checkmark.psd"),
+                dropdown = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/DropdownArrow.psd"),
+                mask = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UIMask.psd")
+            };
+
+        const float W = 920f;
+        const float H = 396f;
+        const float P = 12f;
+        float cw = W - 2f * P;
+
+        GameObject root = new GameObject("PoseStudioTimeline",
+            typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        RectTransform rrt = root.GetComponent<RectTransform>();
+        rrt.anchorMin = new Vector2(0.5f, 0.5f);
+        rrt.anchorMax = new Vector2(0.5f, 0.5f);
+        rrt.pivot = new Vector2(0.5f, 0.5f);
+        rrt.sizeDelta = new Vector2(W, H);
+        Image bg = root.GetComponent<Image>();
+        bg.sprite = _res.background;
+        bg.type = Image.Type.Sliced;
+        bg.color = new Color(0.12f, 0.13f, 0.16f, 0.97f);
+        root.AddComponent<PoseStudio.PoseWindowDrag>();
+
+        MakeText(root.transform, "Title", "Timeline", P, 10f, cw - 40f, 22f,
+            15, TextAnchor.MiddleLeft, FontStyle.Bold);
+        MakeButton(root.transform, "Button_TLClose", "X", W - 40f, 8f, 28f, 24f);
+
+        // transport + actions row
+        float y = 40f;
+        MakeButton(root.transform, "Button_TLPlay", "Play", P, y, 70f, 26f);
+        MakeText(root.transform, "Text_TLTime", "00.000 / 00.000s", P + 78f, y, 190f, 26f,
+            12, TextAnchor.MiddleLeft, FontStyle.Normal);
+        MakeToggle(root.transform, "Toggle_TLSnap", "snap 0.1s", P + 262f, y, 100f, 24f);
+        MakeButton(root.transform, "Button_TLCapture", "Capture Pose Into Key", P + 372f, y, 180f, 26f);
+        MakeButton(root.transform, "Button_TLAddAt", "Add Key At Playhead", P + 560f, y, 170f, 26f);
+        MakeButton(root.transform, "Button_TLDelete", "Delete Key", P + 738f, y, 90f, 26f);
+        y += 34f;
+
+        // speed + zoom side by side (own labels; runtime wires by control name)
+        float half = (cw - 16f) / 2f;
+        float ys = y;
+        MakeText(root.transform, "Lbl_tlspeed", "Anim Speed", P, ys, 90f, 26f, 12, TextAnchor.MiddleLeft, FontStyle.Normal);
+        GameObject sp = DefaultControls.CreateSlider(_res);
+        sp.name = "Slider_tlspeed";
+        Slider spc = sp.GetComponent<Slider>();
+        spc.minValue = 0f; spc.maxValue = 3f; spc.value = 1f;
+        Place(sp.transform, root.transform, P + 96f, ys + 6f, half - 96f - 62f, 18f);
+        MakeValueInput(root.transform, "Input_tlspeed", "1.00", P + half - 58f, ys + 2f, 58f, 24f);
+
+        MakeText(root.transform, "Lbl_tlzoom", "Zoom", P + half + 16f, ys, 50f, 26f, 12, TextAnchor.MiddleLeft, FontStyle.Normal);
+        GameObject zo = DefaultControls.CreateSlider(_res);
+        zo.name = "Slider_tlzoom";
+        Slider zoc = zo.GetComponent<Slider>();
+        zoc.minValue = 1f; zoc.maxValue = 8f; zoc.value = 1f;
+        Place(zo.transform, root.transform, P + half + 72f, ys + 6f, half - 72f, 18f);
+        y += 30f;
+
+        // the strip view (masked); TimelineEditor builds ruler/keys/playhead inside
+        GameObject view = new GameObject("TLView",
+            typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(RectMask2D));
+        Image vbg = view.GetComponent<Image>();
+        vbg.color = new Color(0.08f, 0.09f, 0.12f, 1f);
+        Place(view.transform, root.transform, P, y, cw, 132f);
+        GameObject contentGo = new GameObject("TLContent", typeof(RectTransform));
+        RectTransform crt = contentGo.GetComponent<RectTransform>();
+        crt.SetParent(view.transform, false);
+        crt.anchorMin = new Vector2(0f, 1f);
+        crt.anchorMax = new Vector2(0f, 1f);
+        crt.pivot = new Vector2(0f, 1f);
+        crt.sizeDelta = new Vector2(cw, 130f);
+        crt.anchoredPosition = new Vector2(0f, 0f);
+        y += 138f;
+
+        // pan (only matters when zoomed in)
+        MakeText(root.transform, "Lbl_tlpan", "Pan", P, y, 50f, 22f, 12, TextAnchor.MiddleLeft, FontStyle.Normal);
+        GameObject pa = DefaultControls.CreateSlider(_res);
+        pa.name = "Slider_tlpan";
+        Slider pac = pa.GetComponent<Slider>();
+        pac.minValue = 0f; pac.maxValue = 1f; pac.value = 0f;
+        Place(pa.transform, root.transform, P + 56f, y + 4f, cw - 56f, 18f);
+        y += 28f;
+
+        // selected key row
+        MakeText(root.transform, "Text_TLKey", "no key selected", P, y, 180f, 26f,
+            12, TextAnchor.MiddleLeft, FontStyle.Bold);
+        MakeText(root.transform, "Lbl_tlsec", "Secs to Next", P + 190f, y, 100f, 26f,
+            12, TextAnchor.MiddleLeft, FontStyle.Normal);
+        MakeValueInput(root.transform, "Input_tlsec", "0.500", P + 296f, y + 1f, 70f, 24f);
+        MakeText(root.transform, "Lbl_tlease", "Ease to next", P + 386f, y, 100f, 26f,
+            12, TextAnchor.MiddleLeft, FontStyle.Normal);
+        MakeDropdown(root.transform, "Dropdown_TLEase", P + 490f, y, 140f, 26f);
+        y += 32f;
+
+        MakeText(root.transform, "Text_TLStatus",
+            "drag the strip to scrub - drag a diamond to retime - keys stay in sync with the main window",
+            P, y, cw, 18f, 10, TextAnchor.MiddleLeft, FontStyle.Italic);
+
+        GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
+        Object.DestroyImmediate(root);
+        return prefab;
     }
 
     static DefaultControls.Resources _res;
@@ -308,6 +422,9 @@ public static class PoseStudioBuild
         y += 20f;
 
         MakeSliderRow(c, cX, cW, "kfsec", "Secs to Next", 0f, 10f, 0.5f, ref y);
+
+        MakeButton(c, "Button_Timeline", "Open Timeline Editor", cX, y, cW, 28f);
+        y += 34f;
 
         // ---- Blendshape trigger section ----
         MakeText(c, "Hdr_Trigger", "— Blendshape trigger —", cX, y, cW, 20f,

@@ -29,6 +29,7 @@ namespace PoseStudio
             public int kfA;
             public int kfB;
             public float kfU;
+            public bool paused;   // timeline editor transport/scrub hold
 
             // Resolved blendshape-trigger source (when item.useTrigger).
             public SkinnedMeshRenderer trigR;
@@ -544,11 +545,14 @@ namespace PoseStudio
                         // (1 = authored timing, 0.5 = half speed, 2 = double) — it was
                         // only wired into the wave mode below, so keyframe animations
                         // (incl. imported MMD/BVH/VRMA) ignored the slider entirely.
-                        rt.phase += Mathf.Max(0f, it.speed) * dt;
+                        if (!rt.paused) rt.phase += Mathf.Max(0f, it.speed) * dt;
                         if (cycle > 0.0001f) rt.phase -= cycle * Mathf.Floor(rt.phase / cycle);
                         else rt.phase = 0f;
                         rt.kfMode = true;
                         ComputeSegment(it.keyframes, rt.phase, cycle, out rt.kfA, out rt.kfB, out rt.kfU);
+                        // per-segment easing (timeline editor): remap the blend fraction
+                        if (rt.kfA >= 0 && rt.kfA < it.keyframes.Count && it.keyframes[rt.kfA] != null)
+                            rt.kfU = EaseRemap(it.keyframes[rt.kfA].ease, rt.kfU);
                         rt.amount = rt.env;
                     }
                     else
@@ -753,6 +757,26 @@ namespace PoseStudio
         // then OVERWRITES localScale on bones it squash/stretches — which are often the same
         // bones a pose scales (e.g. a "bigger chest" toggle on the breast root). Called from a
         // late-execution-order component so the pose's scale is the final word on those bones.
+        static float EaseRemap(string ease, float u)
+        {
+            if (ease == "smooth") return u * u * (3f - 2f * u);
+            if (ease == "in") return u * u;
+            if (ease == "out") return 1f - (1f - u) * (1f - u);
+            return u;
+        }
+
+        // ---- timeline editor hooks: scrub / transport on a specific item ----
+        ItemRT FindRT(PoseItem it)
+        {
+            for (int i = 0; i < items.Count; i++) if (items[i].item == it) return items[i];
+            return null;
+        }
+        public float GetPhase(PoseItem it) { ItemRT rt = FindRT(it); return rt != null ? rt.phase : 0f; }
+        public void SetPhase(PoseItem it, float seconds)
+        { ItemRT rt = FindRT(it); if (rt != null) rt.phase = Mathf.Max(0f, seconds); }
+        public bool GetPaused(PoseItem it) { ItemRT rt = FindRT(it); return rt != null && rt.paused; }
+        public void SetPaused(PoseItem it, bool p) { ItemRT rt = FindRT(it); if (rt != null) rt.paused = p; }
+
         public void ApplyLateScale()
         {
             for (int gi = 0; gi < boneGroups.Count; gi++)

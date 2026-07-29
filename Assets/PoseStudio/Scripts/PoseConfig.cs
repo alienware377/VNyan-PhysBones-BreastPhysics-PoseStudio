@@ -114,6 +114,7 @@ namespace PoseStudio
     public class PoseKeyframe
     {
         public float seconds = 0.5f;              // seconds from this keyframe to the next (3-decimal)
+        public string ease = "linear";            // easing INTO the next key: linear|smooth|in|out
         public List<KeyframeChannel> channels = new List<KeyframeChannel>();
     }
 

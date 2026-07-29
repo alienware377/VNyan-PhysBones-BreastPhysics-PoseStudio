@@ -46,3 +46,4 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   windowPrefab: {fileID: 4836641124043289474, guid: 459211b563d4d864bb3b24e40bb978db, type: 3}
   browserPrefab: {fileID: 7542287222554218763, guid: bb416431515f9784bb5607c4577e8eaf, type: 3}
+  timelinePrefab: {fileID: 8103834657479281075, guid: 509bb18fd711bd947821c51d81b30f99, type: 3}

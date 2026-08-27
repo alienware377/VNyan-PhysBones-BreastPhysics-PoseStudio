@@ -149,6 +149,26 @@ A chain simulates the whole subtree under `rootBone`. One child → swings (aims
 - Implemented: pull, spring, stiffness, gravity, gravity falloff, immobile, angle limit, max stretch, sphere/capsule/plane colliders, multi-child split handling.
 - Not yet implemented: grab/pose, squish, hinge/polar limits, per-bone radius curves, collider `inside` mode.
 
+### Stability (v2.1.0)
+
+Four solver fixes, in case you ever saw hair that flailed instead of settling:
+
+- **Collision no longer injects energy.** When a collider pushed a bone out, that push-out was
+  left in the Verlet history and came back as velocity on the next substep. A chain whose rest
+  pose sat inside a collider would then oscillate forever instead of settling on the surface.
+  The correction is now applied to the previous position too.
+- **Collider and length constraints iterate.** Restoring bone length after a push-out could
+  shove the tip straight back inside the collider it had just left. The pair now relaxes twice,
+  with a final collider pass so the tip always ends up outside.
+- **Velocity is capped** at two bone-lengths per substep, so a constraint fight can't escalate.
+- **Teleports are detected.** A root jump over 1 m (avatar reload, seat change) now shifts the
+  whole simulation along instead of arriving as one enormous velocity.
+
+Also: the native-physics override now catches **Magica Cloth 1** (its components are named
+`MagicaBoneCloth`/`MagicaBoneSpring`, which the old `magicacloth` token missed), and native
+physics is disabled *before* the rest pose is captured — previously the "rest" pose could be
+whatever sagged pose a live native solver happened to be holding.
+
 ---
 
 ## Jiggle Physics

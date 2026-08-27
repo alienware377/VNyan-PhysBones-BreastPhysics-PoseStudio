@@ -95,6 +95,19 @@ namespace PhysBones
             Vector3 rootDelta = root.position - prevRootPos;
             prevRootPos = root.position;
 
+            // A jump this large is a teleport (avatar reload, seat change, scene reset), not
+            // motion. Carrying it into the Verlet history whips every chain; shift the whole
+            // sim state along instead so the chain arrives already settled.
+            if (rootDelta.magnitude > 1f)
+            {
+                for (int i = 0; i < joints.Count; i++)
+                {
+                    joints[i].tip += rootDelta;
+                    joints[i].prevTip += rootDelta;
+                }
+                rootDelta = Vector3.zero;
+            }
+
             float immobile = Mathf.Clamp01(cfg.immobile);
             if (immobile > 0f)
             {
@@ -133,8 +146,12 @@ namespace PhysBones
                 float boneLen = (restTip - parentPos).magnitude;
                 if (boneLen < 1e-6f) continue;
 
-                // Verlet inertia.
+                // Verlet inertia, capped: a tip can carry at most two bone-lengths of motion
+                // per substep. Anything above that is an artifact (teleport remnant, constraint
+                // fight), and uncapped it feeds back through the length constraint as whip.
                 Vector3 vel = (j.tip - j.prevTip) * (1f - damping);
+                float maxVel = boneLen * 2f;
+                if (vel.sqrMagnitude > maxVel * maxVel) vel = vel.normalized * maxVel;
 
                 // Gravity with rest-pose falloff.
                 float gFactor = 1f;
@@ -178,19 +195,35 @@ namespace PhysBones
                     }
                 }
 
-                // Colliders, then restore length so collisions don't shorten the bone.
+                // Colliders + length, iterated. One pass is not enough: restoring the bone
+                // length after a push-out can re-embed the tip in the collider it just left,
+                // so the pair is relaxed twice and a final collider pass guarantees the tip is
+                // handed back outside every volume (the tiny length error this leaves does not
+                // matter - only the tip's DIRECTION drives the bone rotation below).
+                Vector3 beforeCollision = next;
                 if (colliders != null && colliders.Count > 0)
                 {
+                    for (int iter = 0; iter < 2; iter++)
+                    {
+                        for (int ci = 0; ci < colliders.Count; ci++)
+                            colliders[ci].Resolve(ref next, boneRadius);
+
+                        Vector3 d2 = next - parentPos;
+                        float l2 = d2.magnitude;
+                        if (l2 > 1e-6f) next = parentPos + d2 * (L / l2);
+                    }
                     for (int ci = 0; ci < colliders.Count; ci++)
                         colliders[ci].Resolve(ref next, boneRadius);
-
-                    Vector3 d2 = next - parentPos;
-                    float l2 = d2.magnitude;
-                    if (l2 > 1e-6f) next = parentPos + d2 * (L / l2);
                 }
 
                 j.prevTip = j.tip;
                 j.tip = next;
+
+                // The push-out must NOT read as motion next substep. Without this, the whole
+                // collider correction lands in (tip - prevTip) and Verlet re-injects it as
+                // velocity every frame - a rest pose inside a collider then oscillates forever
+                // instead of settling on the surface (the "exploding hair" failure).
+                j.prevTip += next - beforeCollision;
 
                 // Aim the bone so its rest child-direction points at the solved tip.
                 Vector3 restDirW = restTip - parentPos;

@@ -28,9 +28,12 @@ namespace PhysBones
         };
 
         // Component-type-name substrings (lower-case) treated as native bone physics to disable.
+        // "magica", not "magicacloth": MagicaCloth V1's components are named MagicaBoneCloth /
+        // MagicaBoneSpring / MagicaMeshCloth / ... - "magicacloth" is only the NAMESPACE there,
+        // and matching runs against the type name, so V1 setups slipped through the override.
         static readonly string[] DEFAULT_NATIVE_TOKENS =
         {
-            "springbone", "dynamicbone", "magicacloth", "spcrjointdynamics"
+            "springbone", "dynamicbone", "magica", "spcrjointdynamics"
         };
 
         // The UI window prefab is assigned by the AssetBundle build (PhysBoneBuild.cs).
@@ -950,6 +953,15 @@ namespace PhysBones
                 }
             }
 
+            // Two-phase bind: resolve every chain's root FIRST so the native-physics override
+            // (which scopes by chain roots) can run BEFORE Bind() captures each chain's rest
+            // pose. Binding first meant the "rest pose" was whatever deflected pose a live
+            // native sim happened to be holding at that instant - permanently sagged/mid-swing.
+            List<ChainConfig> pendCfg = new List<ChainConfig>();
+            List<Transform> pendRoot = new List<Transform>();
+            List<HashSet<string>> pendIgnore = new List<HashSet<string>>();
+            List<List<PhysBoneCollider>> pendCols = new List<List<PhysBoneCollider>>();
+
             if (config.chains != null)
             {
                 foreach (ChainConfig ch in config.chains)
@@ -977,22 +989,29 @@ namespace PhysBones
                                 cols.Add(c);
                         }
 
-                    PhysBoneChain chain = new PhysBoneChain(ch);
-                    chain.substeps = substeps;
-                    chain.gravityDir = gravityDir;
-
-                    if (chain.Bind(rootT, ignore, cols))
-                    {
-                        chains.Add(chain);
-                        chainRoots.Add(rootT);
-                    }
-                    else
-                        Debug.LogWarning(string.Format(
-                            "[PhysBones] chain '{0}': no simulatable bones under '{1}'", ch.name, ch.rootBone));
+                    pendCfg.Add(ch);
+                    pendRoot.Add(rootT);
+                    pendIgnore.Add(ignore);
+                    pendCols.Add(cols);
+                    chainRoots.Add(rootT);
                 }
             }
 
             ApplyNativePhysicsOverride();
+
+            for (int i = 0; i < pendCfg.Count; i++)
+            {
+                PhysBoneChain chain = new PhysBoneChain(pendCfg[i]);
+                chain.substeps = substeps;
+                chain.gravityDir = gravityDir;
+
+                if (chain.Bind(pendRoot[i], pendIgnore[i], pendCols[i]))
+                    chains.Add(chain);
+                else
+                    Debug.LogWarning(string.Format(
+                        "[PhysBones] chain '{0}': no simulatable bones under '{1}'",
+                        pendCfg[i].name, pendCfg[i].rootBone));
+            }
         }
 
         // ----- native (VRM SpringBone / MagicaCloth / SPCR / DynamicBone) override -----

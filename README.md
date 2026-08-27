@@ -149,7 +149,7 @@ A chain simulates the whole subtree under `rootBone`. One child → swings (aims
 - Implemented: pull, spring, stiffness, gravity, gravity falloff, immobile, angle limit, max stretch, sphere/capsule/plane colliders, multi-child split handling.
 - Not yet implemented: grab/pose, squish, hinge/polar limits, per-bone radius curves, collider `inside` mode.
 
-### Stability (v2.1.0)
+### Stability (v2.3.0)
 
 Four solver fixes, in case you ever saw hair that flailed instead of settling:
 

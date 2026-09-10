@@ -95,7 +95,7 @@ namespace PoseStudio
         {
             "posX", "posY", "posZ", "rotX", "rotY", "rotZ",
             "sclX", "sclY", "sclZ", "weight", "speed", "blend",
-            "tcurve", "tscale", "kfsec"
+            "tcurve", "tscale", "kfsec", "idlewait"
         };
 
         // Assigned by the AssetBundle build (PoseStudioBuild.cs).
@@ -543,6 +543,7 @@ namespace PoseStudio
             }
             SetSlider("speed", selectedItem.speed);
             SetSlider("blend", selectedItem.blendTime);
+            if (config.settings != null) SetSlider("idlewait", config.settings.idleDelay);
 
             if (keyframeToggle != null) keyframeToggle.isOn = selectedItem.useKeyframes;
 
@@ -1504,6 +1505,7 @@ namespace PoseStudio
             UpdateValueLabel(key, v);
 
             // Item-level sliders.
+            if (key == "idlewait") { if (config.settings != null) config.settings.idleDelay = v; return; }
             if (key == "speed") { if (selectedItem != null) selectedItem.speed = v; return; }
             if (key == "blend") { if (selectedItem != null) selectedItem.blendTime = v; return; }
             if (key == "tcurve") { if (selectedItem != null) selectedItem.triggerCurve = v; return; }

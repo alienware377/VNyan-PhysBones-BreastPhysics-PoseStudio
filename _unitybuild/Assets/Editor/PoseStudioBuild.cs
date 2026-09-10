@@ -403,6 +403,7 @@ public static class PoseStudioBuild
         MakeToggle(c, "Toggle_IdleAnim", "Idle animation (auto-play when tracking is lost)",
             cX, y, cW, 24f);
         y += 28f;
+        MakeSliderRow(c, cX, cW, "idlewait", "Idle Wait (s)", 5f, 120f, 15f, ref y);
 
         // Animation params.
         MakeText(c, "Lbl_Wave", "Wave", cX, y, 70f, 30f,

@@ -22,7 +22,7 @@ namespace PoseStudio
         // hasn't moved more than `idleMotionThreshold` degrees/frame for `idleDelay` seconds,
         // tracking is considered lost and the item flagged `idleAnim` auto-plays (unless a
         // "major" animation is already on). Both are JSON-tunable.
-        public float idleDelay = 1.5f;             // seconds of stillness before idle kicks in
+        public float idleDelay = 15f;              // seconds of stillness before idle kicks in
         public float idleMotionThreshold = 0.02f;  // degrees/frame of head motion = "tracking alive"
     }
 

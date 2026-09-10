@@ -717,6 +717,10 @@ namespace PoseStudio
 
                 if (maxAmt <= EPS)
                 {
+                    // Put the shape back where we found it. Without this the LAST value we
+                    // wrote stays on the renderer forever, so a face-tracked shape the item
+                    // touched (a blink, say) sticks closed once the item stops.
+                    if (g.engaged) g.r.SetBlendShapeWeight(g.index, g.baseWeight);
                     g.engaged = false;
                     continue;
                 }

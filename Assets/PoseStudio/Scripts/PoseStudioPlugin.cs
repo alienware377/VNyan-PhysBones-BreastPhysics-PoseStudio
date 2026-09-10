@@ -720,9 +720,17 @@ namespace PoseStudio
             if (idleAutoOn && !idleItem.active) { idleAutoOn = false; idleSuppressed = true; }
 
             bool want = lost && !majorOn && !idleSuppressed;
+            // Holding still for a moment while tracking is perfectly alive used to start the
+            // idle animation for a frame or two before the next flicker of motion killed it —
+            // read on screen as a twitch. Once it starts it now stays for a beat, and it has
+            // to be quiet a good while longer than the delay before starting at all.
+            if (want && !idleAutoOn && (Time.time - lastMotionTime) < Mathf.Max(0.2f, delay) + IDLE_CONFIRM)
+                want = false;
+            if (!want && idleAutoOn && (Time.time - idleOnSince) < IDLE_MIN_ON) want = true;
+
             if (want && !idleItem.active)
             {
-                idleItem.active = true; idleAutoOn = true;
+                idleItem.active = true; idleAutoOn = true; idleOnSince = Time.time;
                 if (ReferenceEquals(selectedItem, idleItem) && activeToggle != null)
                 { suppressCallbacks = true; activeToggle.isOn = true; suppressCallbacks = false; }
             }
@@ -733,6 +741,12 @@ namespace PoseStudio
                 { suppressCallbacks = true; activeToggle.isOn = false; suppressCallbacks = false; }
             }
         }
+
+        // extra quiet time before the idle animation may start, and the shortest it may
+        // stay once it does — together these stop the one-frame twitch
+        const float IDLE_CONFIRM = 0.75f;
+        const float IDLE_MIN_ON = 1.25f;
+        float idleOnSince;
 
         void SampleAppliedHead()
         {

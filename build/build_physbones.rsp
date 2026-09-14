@@ -2,7 +2,6 @@
 -nologo
 -optimize+
 -out:"build\PhysBones.dll"
--reference:"C:\Program Files\VNyan\VNyan_Data\Managed\mscorlib.dll"
 -reference:"C:\Program Files\VNyan\VNyan_Data\Managed\netstandard.dll"
 -reference:"C:\Program Files\VNyan\VNyan_Data\Managed\System.dll"
 -reference:"C:\Program Files\VNyan\VNyan_Data\Managed\System.Core.dll"

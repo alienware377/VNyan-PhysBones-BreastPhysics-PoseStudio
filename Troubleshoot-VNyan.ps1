@@ -29,7 +29,22 @@ Add-Type -AssemblyName System.Windows.Forms
 $picker = New-Object System.Windows.Forms.FolderBrowserDialog
 $picker.Description = 'Select your VNyan install folder (the folder containing VNyan.exe)'
 $picker.ShowNewFolderButton = $false
-if (Test-Path 'C:\Program Files\VNyan') { $picker.SelectedPath = 'C:\Program Files\VNyan' }
+# Pre-select the VNyan folder we can work out for you (a running VNyan, or the folder its own
+# log says it last ran from). VNyan has no installer, so there is no fixed place to guess.
+$guess = $null
+try { $p = Get-Process -Name 'VNyan' -ErrorAction SilentlyContinue | Select-Object -First 1
+      if ($p -and $p.Path) { $guess = Split-Path $p.Path } } catch {}
+if (-not $guess) {
+    $lg = Join-Path $env:USERPROFILE 'AppData\LocalLow\Suvidriel\VNyan\Player.log'
+    try {
+        if (Test-Path $lg) {
+            foreach ($line in (Get-Content $lg -TotalCount 80)) {
+                if ($line -match "Mono path\[0\]\s*=\s*'(.+?)[/\\]VNyan_Data") { $guess = ($Matches[1] -replace '/', '\'); break }
+            }
+        }
+    } catch {}
+}
+if ($guess -and (Test-Path $guess)) { $picker.SelectedPath = $guess }
 if ($picker.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
     Line "No folder selected. Aborting."
     $report | Out-File -FilePath "$PSScriptRoot\VNyan_Diagnostics_Report.txt" -Encoding utf8
@@ -270,7 +285,10 @@ foreach ($r in $steamRoots) {
     }
 }
 $found = $found | Sort-Object -Unique
-if ($found.Count -le 1) {
+if ($found.Count -eq 0) {
+    Line "No VNyan.exe turned up in the usual places - that is perfectly normal, VNyan has no"
+    Line "fixed install folder. The folder you picked above is the one that matters."
+} elseif ($found.Count -eq 1) {
     Line "Only one VNyan.exe found (good): $($found -join '; ')"
 } else {
     Line "MULTIPLE VNyan.exe found - make sure you install into AND launch the SAME one:"

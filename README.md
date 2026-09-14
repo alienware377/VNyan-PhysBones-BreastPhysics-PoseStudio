@@ -7,6 +7,12 @@
 > `Jayo*.dll` / `Jayo*.vnobj` files automatically (manual installs: delete them yourself
 > before copying v2 in). Your settings JSONs are unaffected and carry over.
 
+> **New in v2.4.0:** the installer now **looks for VNyan by itself** (a running VNyan, the log
+> VNyan keeps, Steam, itch) and otherwise asks you to open your VNyan folder — nothing is treated
+> as a "default" location any more. Pose Studio's **Idle wait** is its own slider (15 s by default),
+> blendshapes are released when an item stops, and the packaged Pose Studio files are freshly built
+> (they were one build behind in v2.2.0–v2.3.0).
+
 [![Latest Release](https://img.shields.io/github/v/release/alienware377/VNyan-PhysBones-BreastPhysics-PoseStudio?label=download&color=brightgreen)](https://github.com/alienware377/VNyan-PhysBones-BreastPhysics-PoseStudio/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -34,16 +40,22 @@ All three install together, run in `LateUpdate` independently, and save their co
 
 1. Download the latest release zip (or clone this repository) and unzip it anywhere.
 2. Fully close VNyan (check the system tray), then double-click **`install.bat`**.
-3. The installer finds VNyan at `C:\Program Files\VNyan` automatically, or lets you
-   **browse to your VNyan folder** if you installed it somewhere else (itch.io app,
-   portable drive, custom path...).
-4. Admin rights are requested **only if your VNyan folder is write-protected** (like the
-   default Program Files location) — portable and user-folder installs never see a UAC
-   prompt.
+3. The installer **looks for VNyan by itself** — a VNyan that's open, the log VNyan keeps
+   from the last time it ran, your Steam libraries, and the itch app — and asks you to
+   confirm what it found. If it can't find VNyan, or you say no, it asks you to **open your
+   VNyan folder**: the one with `VNyan.exe` inside. VNyan has no installer of its own, so it
+   can live anywhere, and the installer never assumes a location for you.
+4. Admin rights are requested **only if your VNyan folder is write-protected** — a VNyan you
+   unzipped yourself never sees a UAC prompt.
 5. Updating from v1.x? The installer automatically retires the old `Jayo*` plugin files
    so both versions can't load at once. Your settings carry over.
 6. Launch VNyan and open the **Plugins** window — you should see buttons for
    **VRChat PhysBones**, **Jiggle Physics**, and **Pose Studio**.
+
+> Installing from a script? `powershell -ExecutionPolicy Bypass -File install.ps1 -Target "D:\Apps\VNyan" -Yes`
+> installs without prompting — it still asks Windows for admin rights if that folder is
+> write-protected, and stops if VNyan is open. `-ListFound` just prints the VNyan folders the
+> search finds.
 
 ### If the Plugins panel is empty after installing
 
@@ -149,7 +161,7 @@ A chain simulates the whole subtree under `rootBone`. One child → swings (aims
 - Implemented: pull, spring, stiffness, gravity, gravity falloff, immobile, angle limit, max stretch, sphere/capsule/plane colliders, multi-child split handling.
 - Not yet implemented: grab/pose, squish, hinge/polar limits, per-bone radius curves, collider `inside` mode.
 
-### Stability (v2.3.0)
+### Solver stability (added in v2.3.0)
 
 Four solver fixes, in case you ever saw hair that flailed instead of settling:
 
@@ -230,7 +242,14 @@ Build **toggles** and **looping animations** from bone / mesh / blendshape offse
 11. **IK goals** — add 2-bone IK goals (legs/arms) that pin end effectors in place after FK runs. See the [IK section](#inverse-kinematics-ik) below.
 12. **Import Animation…** — load an external animation and retarget it onto your rig as a keyframe item (see [below](#importing-animations)).
 13. **Export Poses… / Import Poses…** — share toggles & animations (see [below](#sharing-poses-export--import)).
-14. **Reload / Save / Close**.
+14. **Open Timeline Editor** — opens the timeline window for the selected keyframe item: a strip of
+    draggable key diamonds with a scrubbable playhead and transport, zoom/pan, retiming by dragging,
+    per-segment easing, per-group lanes (bones / meshes / blendshapes), capture-into-key with masking,
+    and key copy/paste. Much friendlier than typing keyframe times by hand.
+15. **Idle animation (auto-play when tracking is lost)** — tick this on one item and it plays by
+    itself once your head has been still for the **Idle Wait (s)** time (15 s by default, slider range
+    5–120 s), then blends back out the moment you move again. Lovely for away moments.
+16. **Reload / Save / Close**.
 
 ### Importing animations
 
@@ -274,6 +293,11 @@ Saved to `%USERPROFILE%\AppData\LocalLow\Suvidriel\VNyan\posestudio.json` — no
 | `blendshapes[]` | `{ mesh, shape, weight }` (empty `mesh` searches every mesh) |
 | `hideMeshes[]` | Renderer names to hide (disable) while the item is active; restored when it turns off |
 | `ikGoals[]` | 2-bone IK goals; see [IK section](#inverse-kinematics-ik) |
+| `idleAnim` | `true` = play this item by itself once head tracking goes still (only one item should carry it) |
+
+Global `settings`: `idleDelay` (seconds of stillness before the idle item takes over, default `15`,
+the *Idle Wait (s)* slider) and `idleMotionThreshold` (degrees of head motion per frame that still
+counts as "you're there", default `0.02`).
 
 Bone and mesh names accept Unity humanoid enum names (`Head`, `LeftHand`, …) or raw transform names.
 
@@ -336,13 +360,15 @@ The prebuilt `dist/` files should load on any VNyan 2022.3 install. If they don'
 
 ### DLL only (no Unity needed)
 
+Run these from the repo root — the `.rsp` files use paths relative to it.
+
 ```
-csc.exe -noconfig @build/build.rsp
-csc.exe -noconfig @build/build_jiggle.rsp
-csc.exe -noconfig @build/build_pose.rsp
+csc.exe -noconfig @build/build_physbones.rsp
+csc.exe -noconfig @build/build_jigglephysics.rsp
+csc.exe -noconfig @build/build_posestudio.rsp
 ```
 
-Each `.rsp` pulls its references straight from `C:\Program Files\VNyan\VNyan_Data\Managed`. Uses the in-box .NET Framework `csc.exe` (C# 5). Or run **`INSTALL_BUILD.bat`** which handles everything automatically.
+Each `.rsp` pulls its references from `C:\Program Files\VNyan\VNyan_Data\Managed` — if your VNyan lives somewhere else, edit those paths in the `.rsp` files. Uses the in-box .NET Framework `csc.exe` (C# 5). Each DLL **must** keep its output name (`PhysBones.dll`, `JigglePhysics.dll`, `PoseStudio.dll`): the bundles look their scripts up by assembly name.
 
 ### `.vnobj` bundles (needs Unity 2022.3.x)
 
@@ -351,8 +377,6 @@ Unity.exe -batchmode -quit -nographics -projectPath "<repo>\_unitybuild" -execut
 Unity.exe -batchmode -quit -nographics -projectPath "<repo>\_unitybuild" -executeMethod JiggleBuild.Build
 Unity.exe -batchmode -quit -nographics -projectPath "<repo>\_unitybuild" -executeMethod PoseStudioBuild.Build
 ```
-
-Or run **`INSTALL_BUILD.bat`** which auto-detects Unity, recompiles the DLLs, rebuilds the bundles, and installs everything.
 
 > **Critical:** VNyan loads the autostart prefab by the addressable name `vnyanitem`. The build scripts set this explicitly. If you rebuild manually and the plugin button never appears, confirm the bundle's addressable name is `vnyanitem` (not the prefab's path).
 

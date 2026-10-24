@@ -17,7 +17,7 @@ namespace PoseStudio
     // (MMD Japanese names, BVH/Mixamo aliases, or VRMA's humanoid map), resolved to the
     // avatar's transform via the Animator. The source's LOCAL rotation (delta from its own
     // rest) is coordinate-converted and applied as the avatar bone's local offset on top of
-    // its rest — the same "apply converted local rotation" scheme MMD→VRM tools use.
+    // its rest, the same "apply converted local rotation" scheme MMD→VRM tools use.
     //
     // Coordinate conversions live in one place (CONVERSION KNOBS) and are trivially
     // flippable, because getting a source rig's handedness/forward exactly right usually
@@ -195,7 +195,7 @@ namespace PoseStudio
             return BuildVmd(raw, new MmdOpts(), anim);
         }
 
-        // Parse a .vmd into RAW (unconverted) rotation tracks + morphs — the dialog re-converts.
+        // Parse a .vmd into RAW (unconverted) rotation tracks + morphs, the dialog re-converts.
         public static VmdRaw ParseVmd(string path, out string report)
         {
             report = "";
@@ -212,7 +212,7 @@ namespace PoseStudio
             {
                 string name = ReadFixedStr(d, p, 15, sj); p += 15;
                 uint frame = BitConverter.ToUInt32(d, p); p += 4;
-                p += 12;                                       // position — skipped
+                p += 12;                                       // position (skipped)
                 Quaternion q = new Quaternion(
                     BitConverter.ToSingle(d, p), BitConverter.ToSingle(d, p + 4),
                     BitConverter.ToSingle(d, p + 8), BitConverter.ToSingle(d, p + 12)); p += 16;
@@ -221,7 +221,7 @@ namespace PoseStudio
                 if (MMD.TryGetValue(name, out hb))
                 {
                     Track tr; if (!raw.tracks.TryGetValue(hb, out tr)) { tr = new Track(); tr.hb = hb; raw.tracks[hb] = tr; }
-                    tr.Add(frame / MMD_FPS, q);                // RAW — no conversion yet
+                    tr.Add(frame / MMD_FPS, q);                // RAW, no conversion yet
                     raw.mappedBones++;
                     if (frame / MMD_FPS > maxT) maxT = frame / MMD_FPS;
                 }

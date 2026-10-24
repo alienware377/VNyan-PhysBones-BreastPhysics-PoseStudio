@@ -80,13 +80,34 @@ namespace PoseStudio
     // from a collapsible model tree (same approach as the PhysBones plugin); blendshapes are
     // picked from a mesh -> shape tree. Everything saves to a shareable JSON file in AppData.
     // Apply the pose EARLY in LateUpdate (negative order) so the avatar's spring/jiggle
-    // physics — native VRM SpringBone, PhysBones, Jiggle, all at default order — run AFTER
+    // physics, native VRM SpringBone, PhysBones, Jiggle, all at default order, run AFTER
     // the dance is posed and therefore react to it. Without this, when Pose Studio (not face
     // tracking) drives the body, the springs may simulate before the pose is applied and never
     // see the motion, so hair/tail/breast look frozen.
     [DefaultExecutionOrder(-100)]
-    public class PoseStudioPlugin : MonoBehaviour, VNyanInterface.IButtonClickedHandler
+    public class PoseStudioPlugin : MonoBehaviour, VNyanInterface.IButtonClickedHandler,
+        VNyanInterface.IBlendshapeProcessingListener
     {
+        // VNyan's VRM clip pipeline runs tracking, then expressions, then node graphs, and calls
+        // each listener after every stage. Pose Studio adds its clips at the LAST stage so a graph
+        // or expression rule cannot wipe them, on top of whatever came before, clamped to 0..1.
+        public void onAfterTracking(ref Dictionary<string, float> shapes) { }
+        public void onAfterExpressions(ref Dictionary<string, float> shapes) { }
+        public void onAfterNodes(ref Dictionary<string, float> shapes)
+        {
+            if (applier == null || shapes == null || applier.clipValues.Count == 0) return;
+            foreach (KeyValuePair<string, float> kv in applier.clipValues)
+            {
+                float cur;
+                bool had = shapes.TryGetValue(kv.Key, out cur);
+                shapes[kv.Key] = Mathf.Clamp(cur + kv.Value, -PoseApplier.BLEND_LIMIT / 100f, PoseApplier.BLEND_LIMIT / 100f);
+                if (clipsLogged.Add(kv.Key))
+                    Debug.Log("[PoseStudio] VRM clip '" + kv.Key + "' driven: +" + kv.Value.ToString("0.00")
+                              + (had ? "" : " (VNyan had no value for it this frame)"));
+            }
+        }
+        readonly HashSet<string> clipsLogged = new HashSet<string>();
+
         const string BUTTON_NAME = "Pose Studio";
         const string CONFIG_FILE = "posestudio.json";
 
@@ -95,8 +116,23 @@ namespace PoseStudio
         {
             "posX", "posY", "posZ", "rotX", "rotY", "rotZ",
             "sclX", "sclY", "sclZ", "weight", "speed", "blend",
-            "tcurve", "tscale", "kfsec", "idlewait"
+            "tcurve", "tscale", "kfsec", "idlewait",
+            // Fit to this model: one multiplier per bone group, saved against the bound body
+            "fitArmsOut", "fitArmsUp", "fitArmsFwd", "fitFeetOut", "fitFeetFwd", "fitHipsUp"
         };
+
+        // Each fit row drives one axis of one bone group: "how far out", "how much higher".
+        // { key, label, group, axis, range }
+        static readonly string[][] FIT_ROWS =
+        {
+            new[] { "fitArmsOut", "Fit: Arms Out",   "Hands", "x", "0.6" },
+            new[] { "fitArmsUp",  "Fit: Arms Up",    "Hands", "y", "0.6" },
+            new[] { "fitArmsFwd", "Fit: Arms Fwd",   "Hands", "z", "0.6" },
+            new[] { "fitFeetOut", "Fit: Feet Apart", "Feet",  "x", "0.4" },
+            new[] { "fitFeetFwd", "Fit: Feet Fwd",   "Feet",  "z", "0.4" },
+            new[] { "fitHipsUp",  "Fit: Hips Up",    "Hips",  "y", "0.4" },
+        };
+        bool fitRowsBuilt;
 
         // Assigned by the AssetBundle build (PoseStudioBuild.cs).
         public GameObject windowPrefab;
@@ -115,7 +151,8 @@ namespace PoseStudio
         // ----- UI state -----
         GameObject window;
         Dropdown itemDropdown;
-        Dropdown boneDropdown;       // combined bone + mesh transform target list
+        Dropdown boneDropdown;       // combined bone + mesh + fit-up transform target list
+        GroupAdjust selectedFit;     // a "(fit) <group>" row, edited with the same sliders
         Dropdown blendDropdown;
         Dropdown waveDropdown;
         Dropdown keyframeDropdown;
@@ -178,6 +215,12 @@ namespace PoseStudio
         {
             uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
+            try
+            {
+                VNyanInterface.VNyanInterface.VNyanAvatar.registerBlendshapeProcessingListener(this);
+                Debug.Log("[PoseStudio] VRM clip control hooked into VNyan's expressions");
+            }
+            catch (Exception e) { Debug.LogWarning("[PoseStudio] could not hook VRM clips: " + e.Message); }
             try { VNyanInterface.VNyanInterface.VNyanUI.registerPluginButton(BUTTON_NAME, this); }
             catch (Exception e) { Debug.LogWarning("[PoseStudio] registerPluginButton failed: " + e.Message); }
 
@@ -193,8 +236,10 @@ namespace PoseStudio
             GameObject lateGo = new GameObject("PoseStudioLateScale");
             lateGo.transform.SetParent(transform, false);
             lateGo.AddComponent<PoseStudioLateScale>().applier = applier;
+            InstallPostLate();
 
             Debug.Log("[PoseStudio] initialized. Config: " + configPath);
+            CheckSafetyCopy();
         }
 
         public void pluginButtonClicked()
@@ -252,6 +297,7 @@ namespace PoseStudio
 
             RectTransform wrt = window.GetComponent<RectTransform>();
             if (wrt != null) wrt.anchoredPosition = new Vector2(0f, 0f);
+            PoseUtil.CleanDashes(window);
 
             itemDropdown = FindControl<Dropdown>("Dropdown_Item");
             boneDropdown = FindControl<Dropdown>("Dropdown_Bone");
@@ -272,6 +318,8 @@ namespace PoseStudio
             statusLabel = FindControl<Text>("Label_Status");
             hotkeyLabel = FindControl<Text>("Label_Hotkey");
             assignHotkeyButton = FindControl<Button>("Button_AssignHotkey");
+
+            EnsureFitRows();
 
             sliders.Clear();
             valueInputs.Clear();
@@ -300,6 +348,18 @@ namespace PoseStudio
                         vi.text = s.value.ToString(FmtFor(key), CultureInfo.InvariantCulture);
                 }
             }
+
+            // Blendshape weight goes from -1000% to +1000%. The bundled window was built 0..100,
+            // so the range is widened here rather than in the asset.
+            Slider ws;
+            if (sliders.TryGetValue("weight", out ws) && ws != null)
+            {
+                ws.minValue = -PoseApplier.BLEND_LIMIT;
+                ws.maxValue = PoseApplier.BLEND_LIMIT;
+            }
+
+            BuildSections();   // every row exists and is in place by now
+            PoseUtil.FastDropdownScroll(window, 40f);
 
             if (itemDropdown != null) itemDropdown.onValueChanged.AddListener(OnItemSelected);
             if (boneDropdown != null) boneDropdown.onValueChanged.AddListener(OnBoneTargetSelected);
@@ -406,6 +466,123 @@ namespace PoseStudio
             StyleInputText(f.placeholder as Text, TextAnchor.MiddleLeft, new Color(0.4f, 0.4f, 0.4f, 0.6f));
             f.customCaretColor = true;
             f.caretColor = new Color(0.05f, 0.05f, 0.07f, 1f);
+        }
+
+        // ---- collapsible sections -------------------------------------------------------
+        // The panel is a flat list of absolutely placed rows, so a section is simply "everything
+        // between one Hdr_* label and the next". Rows keep the positions they were built at; a
+        // shut section just pulls what follows it upward.
+        class UiSection
+        {
+            public string label;
+            public Text hdr;
+            public readonly List<RectTransform> rows = new List<RectTransform>();
+            public readonly List<float> rowY = new List<float>();
+            public float hdrY, height;
+            public bool open;
+            public string baseText = "";
+        }
+
+        readonly List<UiSection> sections = new List<UiSection>();
+        RectTransform sectionContent;
+        float sectionContentH;
+
+        static string Marker(bool open) { return open ? "[-] " : "[+] "; }
+
+        void BuildSections()
+        {
+            sections.Clear();
+            Text first = FindControl<Text>("Hdr_Bone");
+            if (first == null) first = FindControl<Text>("Hdr_Keyframes");
+            if (first == null || first.transform.parent == null) return;
+            Transform content = first.transform.parent;
+            sectionContent = content as RectTransform;
+            if (sectionContent != null) sectionContentH = sectionContent.sizeDelta.y;
+
+            List<RectTransform> kids = new List<RectTransform>();
+            for (int i = 0; i < content.childCount; i++)
+            {
+                RectTransform rt = content.GetChild(i) as RectTransform;
+                if (rt != null) kids.Add(rt);
+            }
+            // visual order: anchoredPosition y runs negative downwards
+            kids.Sort(delegate(RectTransform a, RectTransform b)
+            { return b.anchoredPosition.y.CompareTo(a.anchoredPosition.y); });
+
+            UiSection cur = null;
+            for (int i = 0; i < kids.Count; i++)
+            {
+                RectTransform rt = kids[i];
+                if (rt.name.StartsWith("Hdr_"))
+                {
+                    cur = new UiSection();
+                    cur.label = rt.name.Substring(4);
+                    cur.hdr = rt.GetComponent<Text>();
+                    cur.hdrY = rt.anchoredPosition.y;
+                    sections.Add(cur);
+                    continue;
+                }
+                if (cur == null) continue;      // rows above the first header stay put
+                cur.rows.Add(rt);
+                cur.rowY.Add(rt.anchoredPosition.y);
+            }
+
+            for (int i = 0; i < sections.Count; i++)
+            {
+                UiSection sec = sections[i];
+                float bottom = sec.hdrY;
+                for (int r = 0; r < sec.rows.Count; r++)
+                {
+                    float b = sec.rowY[r] - sec.rows[r].rect.height;
+                    if (b < bottom) bottom = b;
+                }
+                sec.height = sec.hdrY - bottom;
+                if (sec.hdr == null) continue;
+
+                UiSection captured = sec;
+                Button btn = sec.hdr.gameObject.GetComponent<Button>();
+                if (btn == null) btn = sec.hdr.gameObject.AddComponent<Button>();
+                btn.transition = Selectable.Transition.None;
+                btn.onClick.RemoveAllListeners();
+                btn.onClick.AddListener(delegate { ToggleSection(captured); });
+                sec.baseText = sec.hdr.text;
+                sec.hdr.text = Marker(sec.open) + sec.baseText;
+            }
+            RelayoutSections();
+            Debug.Log("[PoseStudio] " + sections.Count + " foldout sections in the window");
+        }
+
+        void ToggleSection(UiSection sec)
+        {
+            sec.open = !sec.open;
+            if (sec.hdr != null) sec.hdr.text = Marker(sec.open) + sec.baseText;
+            RelayoutSections();
+        }
+
+        void RelayoutSections()
+        {
+            float shift = 0f;
+            for (int i = 0; i < sections.Count; i++)
+            {
+                UiSection sec = sections[i];
+                if (sec.hdr != null)
+                {
+                    RectTransform h = sec.hdr.rectTransform;
+                    h.anchoredPosition = new Vector2(h.anchoredPosition.x, sec.hdrY + shift);
+                }
+                for (int r = 0; r < sec.rows.Count; r++)
+                {
+                    RectTransform rt = sec.rows[r];
+                    if (rt == null) continue;
+                    if (rt.gameObject.activeSelf != sec.open) rt.gameObject.SetActive(sec.open);
+                    if (sec.open)
+                        rt.anchoredPosition = new Vector2(rt.anchoredPosition.x, sec.rowY[r] + shift);
+                }
+                if (!sec.open) shift += Mathf.Max(0f, sec.height - 24f);
+            }
+            if (sectionContent != null)
+                sectionContent.sizeDelta = new Vector2(sectionContent.sizeDelta.x,
+                    Mathf.Max(80f, sectionContentH - shift));
         }
 
         T FindControl<T>(string name) where T : Component
@@ -550,6 +727,7 @@ namespace PoseStudio
             if (triggerToggle != null) triggerToggle.isOn = selectedItem.useTrigger;
             SetSlider("tcurve", selectedItem.triggerCurve);
             SetSlider("tscale", selectedItem.triggerScale);
+            RefreshFitSliders();
 
             suppressCallbacks = false;
 
@@ -614,7 +792,7 @@ namespace PoseStudio
                 for (int i = 0; i < config.items.Count; i++)
                     if (config.items[i] != null && !ReferenceEquals(config.items[i], selectedItem))
                         config.items[i].idleAnim = false;
-                SetStatus("'" + selectedItem.name + "' will auto-play when tracking is lost — Save to keep");
+                SetStatus("'" + selectedItem.name + "' will auto-play when tracking is lost. Save to keep");
             }
             else SetStatus("idle animation cleared");
             RecomputeIdleCaches();
@@ -722,7 +900,7 @@ namespace PoseStudio
 
             bool want = lost && !majorOn && !idleSuppressed;
             // Holding still for a moment while tracking is perfectly alive used to start the
-            // idle animation for a frame or two before the next flicker of motion killed it —
+            // idle animation for a frame or two before the next flicker of motion killed it,
             // read on screen as a twitch. Once it starts it now stays for a beat, and it has
             // to be quiet a good while longer than the delay before starting at all.
             if (want && !idleAutoOn && (Time.time - lastMotionTime) < Mathf.Max(0.2f, delay) + IDLE_CONFIRM)
@@ -744,7 +922,7 @@ namespace PoseStudio
         }
 
         // extra quiet time before the idle animation may start, and the shortest it may
-        // stay once it does — together these stop the one-frame twitch
+        // stay once it does, together these stop the one-frame twitch
         const float IDLE_CONFIRM = 0.75f;
         const float IDLE_MIN_ON = 1.25f;
         float idleOnSince;
@@ -843,7 +1021,7 @@ namespace PoseStudio
         {
             string[] presetNames = { "A · default", "B · flip X/Y", "C · flip Y/Z", "D · flip X/W", "E · raw" };
             GameObject h = NewRow("Mmd_Hdr", y);
-            MakeRuntimeButton(h.transform, "Orientation preset — click each and watch, keep the one that looks right:",
+            MakeRuntimeButton(h.transform, "Orientation preset: click each and watch, keep the one that looks right:",
                 INDENT, 0f, 1000f, ROW_H, new Color(0,0,0,0), new Color(0.85f,0.9f,1f,1f), 12, delegate {});
             y += ROW_H + 4f;
             int count = AnimImport.MmdPresetCount;
@@ -869,7 +1047,7 @@ namespace PoseStudio
                 new Color(0.45f,0.2f,0.2f,1f), new Color(1f,0.9f,0.9f,1f), 13, delegate { CancelMmd(); });
             y += ROW_H + 12f;
             SetBrowserStatus("mapped " + mmdRaw.mappedBones + " bones, " + mmdRaw.morphs.Count + " morphs ("
-                + mmdRaw.duration.ToString("0.0") + "s)" + (mmdRaw.sjOk ? "" : " — Shift-JIS unavailable, JP names may be unmatched"));
+                + mmdRaw.duration.ToString("0.0") + "s)" + (mmdRaw.sjOk ? "" : " (Shift-JIS unavailable, JP names may be unmatched)"));
         }
 
         void MmdToggleRow(ref float y, string label, bool on, UnityEngine.Events.UnityAction act)
@@ -884,7 +1062,7 @@ namespace PoseStudio
         {
             if (mmdIndex >= 0 && mmdIndex < config.items.Count) config.items[mmdIndex].active = false;
             CloseBrowser();
-            SetStatus("MMD animation imported — press Save to keep, then Activate to play.");
+            SetStatus("MMD animation imported. Press Save to keep, then Activate to play.");
             mmdRaw = null; mmdIndex = -1;
         }
 
@@ -911,7 +1089,7 @@ namespace PoseStudio
             Rebind();
             int idx = config.items.Count - 1;
             RefreshItemListKeepIndex(idx);
-            SetStatus("added " + type + " '" + it.name + "' — add bones/blendshapes, then Save");
+            SetStatus("added " + type + " '" + it.name + "': add bones/blendshapes, then Save");
         }
 
         void OnRemoveItem()
@@ -934,7 +1112,7 @@ namespace PoseStudio
             else
             { RefreshItemList(); selectedItem = null; }
 
-            SetStatus("removed '" + removed + "' — Save to keep this change");
+            SetStatus("removed '" + removed + "'. Save to keep this change");
         }
 
         string UniqueItemName(string baseName)
@@ -963,7 +1141,7 @@ namespace PoseStudio
 
         // ========================= bone targets =========================
 
-        // The transform section edits one target at a time — either a bone or a mesh
+        // The transform section edits one target at a time, either a bone or a mesh
         // object. Both are listed in the same dropdown (tagged [B] / [M]) and share the
         // Position / Rotation / Scale toggles and the pos/rot/scale sliders below.
         void RefreshBoneList()
@@ -991,6 +1169,10 @@ namespace PoseStudio
                         opts.Add("[M] " + nm);
                     }
             }
+            // Whole-animation fit (per body group) is edited with the "Fit to this model"
+            // sliders. Per-group rows used to be listed here too, but they were never wired to
+            // the transform sliders (a keyframe edit wrote a channel with no id), so they're gone.
+
             if (opts.Count == 0) opts.Add("(no transforms)");
 
             suppressCallbacks = true;
@@ -1014,11 +1196,13 @@ namespace PoseStudio
         {
             selectedBone = null;
             selectedMesh = null;
+            selectedFit = null;
             if (index >= 0 && index < transformTargets.Count)
             {
                 object o = transformTargets[index];
                 selectedBone = o as BoneTarget;
                 selectedMesh = o as MeshTarget;
+                selectedFit = o as GroupAdjust;
             }
             PushTransformToUI();
         }
@@ -1028,6 +1212,7 @@ namespace PoseStudio
         {
             if (selectedBone != null) return selectedBone;
             if (selectedMesh != null) return selectedMesh;
+            if (selectedFit != null) return selectedFit;
             return null;
         }
 
@@ -1113,7 +1298,7 @@ namespace PoseStudio
         //
         // A source blendshape's weight (0..100%) drives this item's strength continuously,
         // shaped by a response curve and an overall strength %. This replaces the on/off
-        // "Activate" control while enabled — e.g. bind a mouth-open shape so the more the
+        // "Activate" control while enabled, e.g. bind a mouth-open shape so the more the
         // user opens their mouth, the more a toggle/animation engages.
 
         void OnTriggerToggled(bool on)
@@ -1123,9 +1308,9 @@ namespace PoseStudio
             Rebind();
             UpdateTriggerLabel();
             if (on && string.IsNullOrEmpty(selectedItem.triggerShape))
-                SetStatus("trigger on — click 'Pick Source…' to choose a driving blendshape");
+                SetStatus("trigger on: click 'Pick Source…' to choose a driving blendshape");
             else if (!on)
-                SetStatus("trigger off — '" + selectedItem.name + "' uses its Activate toggle/hotkey again");
+                SetStatus("trigger off: '" + selectedItem.name + "' uses its Activate toggle/hotkey again");
         }
 
         void OnPickTrigger()
@@ -1158,7 +1343,7 @@ namespace PoseStudio
 
             UpdateTriggerLabel();
             SetBrowserStatus("trigger source set to '" + shape + "'");
-            SetStatus("trigger: '" + shape + "' now drives '" + selectedItem.name + "' — Save to keep");
+            SetStatus("trigger: '" + shape + "' now drives '" + selectedItem.name + "'. Save to keep");
             CloseBrowser();
         }
 
@@ -1183,7 +1368,7 @@ namespace PoseStudio
                     selectedItem.bones.RemoveAt(idx);
                     Rebind();
                     RefreshBoneList();
-                    SetStatus("removed bone '" + removed + "' — Save to keep this change");
+                    SetStatus("removed bone '" + removed + "'. Save to keep this change");
                     return;
                 }
             }
@@ -1196,7 +1381,7 @@ namespace PoseStudio
                     selectedItem.meshes.RemoveAt(idx);
                     Rebind();
                     RefreshBoneList();
-                    SetStatus("removed mesh '" + removed + "' — Save to keep this change");
+                    SetStatus("removed mesh '" + removed + "'. Save to keep this change");
                     return;
                 }
             }
@@ -1206,8 +1391,8 @@ namespace PoseStudio
         // ========================= keyframe timeline =========================
         //
         // Animation items can play through many keyframes instead of the
-        // sine/triangle/pulse wave. Each keyframe holds its OWN full pose — distinct
-        // bone/mesh offsets and blendshape weights — and the seconds until the next
+        // sine/triangle/pulse wave. Each keyframe holds its OWN full pose, distinct
+        // bone/mesh offsets and blendshape weights, and the seconds until the next
         // keyframe (the last loops back to the first). When the timeline is on and a
         // keyframe is selected, the Transform and Blendshape sliders edit THAT keyframe's
         // pose; the applier interpolates between consecutive keyframes over the seconds.
@@ -1265,8 +1450,8 @@ namespace PoseStudio
             Rebind();
             RefreshKeyframeList();
             SetStatus(on
-                ? "keyframe timeline on for '" + selectedItem.name + "' — pick a key, then pose it with the sliders"
-                : "keyframe timeline off — '" + selectedItem.name + "' uses the wave again");
+                ? "keyframe timeline on for '" + selectedItem.name + "': pick a key, then pose it with the sliders"
+                : "keyframe timeline off: '" + selectedItem.name + "' uses the wave again");
         }
 
         void RefreshKeyframeList()
@@ -1356,7 +1541,7 @@ namespace PoseStudio
                 suppressCallbacks = false;
                 SelectKeyframe(last);
             }
-            SetStatus("added keyframe " + (last + 1) + " — pose it with the sliders, then Save");
+            SetStatus("added keyframe " + (last + 1) + ": pose it with the sliders, then Save");
         }
 
         void OnRemoveKeyframe()
@@ -1372,7 +1557,7 @@ namespace PoseStudio
             selectedItem.keyframes.RemoveAt(idx);
             Rebind();
             RefreshKeyframeList();
-            SetStatus("removed keyframe " + (idx + 1) + " — Save to keep this change");
+            SetStatus("removed keyframe " + (idx + 1) + ". Save to keep this change");
         }
 
         // ========================= blendshape targets =========================
@@ -1387,7 +1572,7 @@ namespace PoseStudio
                 {
                     BlendTarget bt = selectedItem.blendshapes[i];
                     string nm = (bt != null && !string.IsNullOrEmpty(bt.shape)) ? bt.shape : ("shape " + i);
-                    opts.Add(nm);
+                    opts.Add(bt != null && bt.IsClip ? "[VRM] " + nm : nm);
                 }
             if (opts.Count == 0) opts.Add("(no blendshapes)");
 
@@ -1447,10 +1632,142 @@ namespace PoseStudio
             selectedItem.blendshapes.RemoveAt(idx);
             Rebind();
             RefreshBlendList();
-            SetStatus("removed blendshape '" + removed + "' — Save to keep this change");
+            SetStatus("removed blendshape '" + removed + "'. Save to keep this change");
         }
 
         // ========================= sliders =========================
+
+        // The window's layout is baked into the asset bundle, so the fit rows are made by cloning
+        // a row that is already there (label, slider, value box) and dropping the copies under the
+        // last one. That way a new control needs no Unity rebuild.
+        void EnsureFitRows()
+        {
+            if (fitRowsBuilt) return;
+            Text lbl = FindControl<Text>("Lbl_tscale");
+            Slider sl = FindControl<Slider>("Slider_tscale");
+            InputField inp = FindControl<InputField>("Input_tscale");
+            if (lbl == null || sl == null || inp == null) return;
+            Transform content = sl.transform.parent;
+            if (content == null) return;
+
+            float bottom = 0f;
+            for (int i = 0; i < content.childCount; i++)
+            {
+                RectTransform r = content.GetChild(i) as RectTransform;
+                if (r != null && r.anchoredPosition.y < bottom) bottom = r.anchoredPosition.y;
+            }
+
+            RectTransform lr = lbl.transform as RectTransform;
+            RectTransform sr = sl.transform as RectTransform;
+            RectTransform ir = inp.transform as RectTransform;
+            float row = 32f;
+            float y = bottom - row;
+
+            Text hdr = Instantiate(lbl, content);
+            hdr.name = "Hdr_Fit";
+            hdr.text = "Fit to this model";
+            hdr.fontStyle = FontStyle.Bold;
+            RectTransform hr = hdr.transform as RectTransform;
+            if (hr != null && lr != null)
+            {
+                hr.anchoredPosition = new Vector2(lr.anchoredPosition.x, y);
+                hr.sizeDelta = new Vector2(260f, lr.sizeDelta.y);
+            }
+            y -= row;
+
+            for (int i = 0; i < FIT_ROWS.Length; i++)
+            {
+                string key = FIT_ROWS[i][0];
+
+                Text nl = Instantiate(lbl, content);
+                nl.name = "Lbl_" + key;
+                nl.text = FIT_ROWS[i][1];
+                RectTransform nlr = nl.transform as RectTransform;
+                if (nlr != null && lr != null)
+                {
+                    nlr.anchoredPosition = new Vector2(lr.anchoredPosition.x, y);
+                    nlr.sizeDelta = new Vector2(130f, lr.sizeDelta.y);
+                }
+
+                Slider ns = Instantiate(sl, content);
+                ns.name = "Slider_" + key;
+                ns.onValueChanged.RemoveAllListeners();
+                ns.minValue = 0f;
+                // A push in metres, either way, so the middle of the slider is "leave it alone".
+                float span = float.Parse(FIT_ROWS[i][4], CultureInfo.InvariantCulture);
+                ns.minValue = -span;
+                ns.maxValue = span;
+                ns.value = 0f;
+                RectTransform nsr = ns.transform as RectTransform;
+                if (nsr != null && sr != null)
+                    nsr.anchoredPosition = new Vector2(sr.anchoredPosition.x + 26f, y + 6f);
+
+                InputField ni = Instantiate(inp, content);
+                ni.name = "Input_" + key;
+                ni.onEndEdit.RemoveAllListeners();
+                ni.onValueChanged.RemoveAllListeners();
+                ni.text = "1.00";
+                RectTransform nir = ni.transform as RectTransform;
+                if (nir != null && ir != null)
+                    nir.anchoredPosition = new Vector2(ir.anchoredPosition.x, y + 2f);
+
+                y -= row;
+            }
+
+            RectTransform crt = content as RectTransform;
+            if (crt != null)
+                crt.sizeDelta = new Vector2(crt.sizeDelta.x,
+                    crt.sizeDelta.y + row * (FIT_ROWS.Length + 1));
+
+            fitRowsBuilt = true;
+            Debug.Log("[PoseStudio] fit sliders added to the window");
+        }
+
+        static int FitRowIndex(string key)
+        {
+            for (int i = 0; i < FIT_ROWS.Length; i++)
+                if (FIT_ROWS[i][0] == key) return i;
+            return -1;
+        }
+
+        // The group entry a fit row drives, made on demand.
+        GroupAdjust FitGroup(string group, bool create)
+        {
+            if (selectedItem == null) return null;
+            if (selectedItem.fit == null)
+            {
+                if (!create) return null;
+                selectedItem.fit = new List<GroupAdjust>();
+            }
+            for (int i = 0; i < selectedItem.fit.Count; i++)
+                if (selectedItem.fit[i] != null && selectedItem.fit[i].group == group)
+                    return selectedItem.fit[i];
+            if (!create) return null;
+            GroupAdjust g = new GroupAdjust();
+            g.group = group;
+            selectedItem.fit.Add(g);
+            return g;
+        }
+
+        static int AxisIndex(string axis)
+        {
+            return axis == "x" ? 0 : (axis == "y" ? 1 : 2);
+        }
+
+        void RefreshFitSliders()
+        {
+            for (int i = 0; i < FIT_ROWS.Length; i++)
+            {
+                GroupAdjust g = FitGroup(FIT_ROWS[i][2], false);
+                float v = 0f;
+                if (g != null && g.position != null)
+                {
+                    int ax = AxisIndex(FIT_ROWS[i][3]);
+                    if (ax < g.position.Length) v = g.position[ax];
+                }
+                SetSlider(FIT_ROWS[i][0], v);
+            }
+        }
 
         void SetSlider(string key, float value)
         {
@@ -1510,11 +1827,23 @@ namespace PoseStudio
             if (key == "blend") { if (selectedItem != null) selectedItem.blendTime = v; return; }
             if (key == "tcurve") { if (selectedItem != null) selectedItem.triggerCurve = v; return; }
             if (key == "tscale") { if (selectedItem != null) selectedItem.triggerScale = v; return; }
+            if (key.StartsWith("fit"))
+            {
+                int row = FitRowIndex(key);
+                if (row < 0) return;
+                GroupAdjust g = FitGroup(FIT_ROWS[row][2], true);
+                if (g == null) return;
+                if (g.position == null || g.position.Length < 3) g.position = new float[3];
+                g.position[AxisIndex(FIT_ROWS[row][3])] = v;
+                Rebind();                 // the fit is worked out when an item binds
+                SetStatus(FIT_ROWS[row][1] + " " + v.ToString("0.00") + " m");
+                return;
+            }
 
             // Keyframe seconds-to-next.
             if (key == "kfsec") { if (selectedKey != null) { selectedKey.seconds = v; RefreshKeyframeOptionText(); } return; }
 
-            // Blendshape weight — to the selected keyframe's channel when posing a keyframe,
+            // Blendshape weight, to the selected keyframe's channel when posing a keyframe,
             // otherwise to the static target.
             if (key == "weight")
             {
@@ -1528,7 +1857,7 @@ namespace PoseStudio
                 return;
             }
 
-            // Transform sliders — write to whichever transform target (bone or mesh) is
+            // Transform sliders, write to whichever transform target (bone or mesh) is
             // active, or to that target's channel in the selected keyframe when posing one.
             float[] pos, rot, scl;
             if (KeyframeEditing() && CurTarget() != null)
@@ -1596,10 +1925,14 @@ namespace PoseStudio
 
         void OnReloadClicked()
         {
+            // Reload throws away unsaved edits, so keep them first: Restore unsaved undoes it.
+            bool kept = safetyDirty;
+            if (kept) WriteSafetyCopy("before Reload");
             LoadConfig();
             Rebind();
             RefreshItemList();
             SetStatus("Reloaded " + Path.GetFileName(configPath));
+            if (kept) ShowRestoreButton(System.DateTime.Now);
         }
 
         void OnSaveClicked() { SaveConfig(); }
@@ -1615,8 +1948,8 @@ namespace PoseStudio
         // ========================= hotkeys =========================
         //
         // Each PoseItem can carry a mono or combo hotkey (e.g. "F8" or "Ctrl+Shift+E").
-        // Pressing it toggles that item's `active` flag — exactly like flipping its
-        // "Activate this item" checkbox — so it works for toggles and animations alike,
+        // Pressing it toggles that item's `active` flag, exactly like flipping its
+        // "Activate this item" checkbox, so it works for toggles and animations alike,
         // and works whether or not the Pose Studio window is open.
 
         // Keys never accepted as the "main" key of a binding (modifiers, mouse, cancel).
@@ -1632,8 +1965,396 @@ namespace PoseStudio
             KeyCode.Mouse3, KeyCode.Mouse4, KeyCode.Mouse5, KeyCode.Mouse6
         };
 
+        float lastConfigPoll;
+        System.DateTime configStamp = System.DateTime.MinValue;
+        System.DateTime ourWrite = System.DateTime.MinValue;
+
+        // ---- safety copy of unsaved work -------------------------------------------------
+        // Edits only reach posestudio.json when Save is pressed. If VNyan closes or the PC
+        // crashes first they are gone, so anything unsaved is also copied to
+        // posestudio.unsaved.json beside it: a minute after an edit (once mouse and keys have
+        // been still for a moment, since copying a 30 MB config takes a beat), when the editor
+        // windows are closed, before a reload, and when VNyan quits. posestudio.json itself is
+        // never written by any of this. Next start, a "Restore unsaved" button offers it back.
+        const string SAFETY_FILE = "posestudio.unsaved.json";
+        bool safetyDirty;              // something may have changed since the last load, save or copy
+        float safetyDirtySince;
+        float lastInputTime;
+        bool editorsWereOpen;
+        GameObject restoreButton;
+
+        string SafetyPath()
+        {
+            string basis = !string.IsNullOrEmpty(configPath) ? configPath : savePath;
+            string dir = string.IsNullOrEmpty(basis) ? Application.persistentDataPath : Path.GetDirectoryName(basis);
+            return Path.Combine(dir, SAFETY_FILE);
+        }
+
+        bool EditorsOpen()
+        {
+            return (window != null && window.activeSelf)
+                || (browserWindow != null && browserWindow.activeSelf)
+                || (timeline != null && timeline.IsOpen);
+        }
+
+        // Every edit takes a click or a key press while an editor window is open, so that counts
+        // as a possible change. Far cheaper than comparing a 30 MB config every frame.
+        void SafetyTick()
+        {
+            bool open = EditorsOpen();
+            bool press = Input.anyKeyDown || Input.GetMouseButton(0);
+            if (press || Input.mouseScrollDelta.y != 0f) lastInputTime = Time.unscaledTime;
+            if (open && press && !safetyDirty) { safetyDirty = true; safetyDirtySince = Time.unscaledTime; }
+
+            if (safetyDirty)
+            {
+                if (editorsWereOpen && !open) WriteSafetyCopy("editor closed");
+                else if (Time.unscaledTime - safetyDirtySince > 60f && Time.unscaledTime - lastInputTime > 2f)
+                    WriteSafetyCopy("autosave");
+            }
+            editorsWereOpen = open;
+        }
+
+        void OnApplicationQuit()
+        {
+            if (safetyDirty) WriteSafetyCopy("VNyan closing");
+        }
+
+        void WriteSafetyCopy(string why)
+        {
+            safetyDirty = false;          // cleared first, so a failing disk is not retried every frame
+            if (config == null) return;
+            string path = SafetyPath();
+            string tmp = path + ".tmp";
+            try
+            {
+                float t0 = Time.realtimeSinceStartup;
+                // Streamed straight to disk, same output as SaveConfig, without a 30 MB string.
+                using (StreamWriter sw = new StreamWriter(tmp, false, new System.Text.UTF8Encoding(false)))
+                using (JsonTextWriter jw = new JsonTextWriter(sw))
+                {
+                    jw.Formatting = Formatting.None;
+                    JsonSerializer.CreateDefault().Serialize(jw, config);
+                }
+                // Swapped in whole, the copy before it kept as .prev: a crash on this PC can leave
+                // the newest file zero-filled, and then the one before it is still good.
+                if (File.Exists(path))
+                {
+                    try { File.Replace(tmp, path, path + ".prev"); }
+                    catch { File.Copy(path, path + ".prev", true); File.Delete(path); File.Move(tmp, path); }
+                }
+                else File.Move(tmp, path);
+                Debug.Log("[PoseStudio] unsaved work copied to " + path + " (" + why + ", "
+                          + ((Time.realtimeSinceStartup - t0) * 1000f).ToString("0") + " ms)");
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[PoseStudio] could not keep a safety copy: " + e.Message);
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            }
+        }
+
+        // At start: offer last session's unsaved work back if it is newer than the saved config
+        // and actually different from it.
+        void CheckSafetyCopy()
+        {
+            try
+            {
+                string path = SafetyPath();
+                if (!File.Exists(path)) return;
+                if (File.Exists(configPath))
+                {
+                    if (File.GetLastWriteTimeUtc(path) <= File.GetLastWriteTimeUtc(configPath)) return;   // saved since
+                    if (SameBytes(path, configPath)) return;
+                }
+                ShowRestoreButton(File.GetLastWriteTime(path));
+            }
+            catch (Exception e) { Debug.LogWarning("[PoseStudio] checking for unsaved work: " + e.Message); }
+        }
+
+        static bool SameBytes(string a, string b)
+        {
+            FileInfo fa = new FileInfo(a), fb = new FileInfo(b);
+            if (fa.Length != fb.Length) return false;
+            byte[] ba = new byte[1 << 20], bb = new byte[1 << 20];
+            using (FileStream sa = fa.OpenRead())
+            using (FileStream sb = fb.OpenRead())
+            {
+                while (true)
+                {
+                    int na = sa.Read(ba, 0, ba.Length);
+                    int nb = sb.Read(bb, 0, na);
+                    if (na != nb) return false;
+                    if (na == 0) return true;
+                    for (int i = 0; i < na; i++) if (ba[i] != bb[i]) return false;
+                }
+            }
+        }
+
+        void ShowRestoreButton(System.DateTime when)
+        {
+            if (restoreButton == null) restoreButton = MakeRestoreButton();
+            if (restoreButton != null)
+            {
+                restoreButton.SetActive(true);
+                SetStatus("Unsaved work from " + when.ToString("MMM d, h:mm tt")
+                          + " was kept safe. Press Restore unsaved to bring it back.");
+            }
+            else
+                SetStatus("Unsaved work from " + when.ToString("MMM d, h:mm tt") + " was kept in " + SafetyPath());
+        }
+
+        // A copy of the Save button, placed in the first free spot around it.
+        GameObject MakeRestoreButton()
+        {
+            Button save = FindControl<Button>("Button_Save");
+            if (save == null) return null;
+            RectTransform srt = save.GetComponent<RectTransform>();
+            GameObject go = Instantiate(save.gameObject, srt.parent, false);
+            go.name = "Button_RestoreUnsaved";
+            Button b = go.GetComponent<Button>();
+            b.onClick = new Button.ButtonClickedEvent();
+            b.onClick.AddListener(OnRestoreUnsaved);
+            Text label = go.GetComponentInChildren<Text>(true);
+            if (label != null)
+            {
+                label.text = "Restore unsaved";
+                label.resizeTextForBestFit = true;
+                label.resizeTextMinSize = 8;
+                label.resizeTextMaxSize = Mathf.Max(label.fontSize, 9);
+            }
+
+            RectTransform rt = go.GetComponent<RectTransform>();
+            float w = srt.rect.width, h = srt.rect.height;
+            float nw = w;
+            if (Mathf.Approximately(rt.anchorMin.x, rt.anchorMax.x))
+            {
+                nw = Mathf.Max(w, 120f);
+                rt.sizeDelta = new Vector2(nw, rt.sizeDelta.y);
+            }
+            Vector2 p = srt.anchoredPosition, pv = srt.pivot;
+            const float GAP = 6f;
+            Vector2[] spots =
+            {
+                new Vector2(p.x - pv.x * w - GAP - (1f - pv.x) * nw, p.y),      // left of Save
+                new Vector2(p.x, p.y + h + GAP),                                  // above
+                new Vector2(p.x + (1f - pv.x) * w + GAP + pv.x * nw, p.y),      // right
+                new Vector2(p.x, p.y - h - GAP),                                  // below
+            };
+            string[] names = { "left of", "above", "right of", "below" };
+            int pick = -1;
+            for (int i = 0; i < spots.Length && pick < 0; i++)
+            {
+                rt.anchoredPosition = spots[i];
+                if (FitsFree(rt)) pick = i;
+            }
+            if (pick < 0) { pick = 0; rt.anchoredPosition = spots[0]; }
+            Debug.Log("[PoseStudio] Restore unsaved button placed " + names[pick] + " Save");
+            go.SetActive(false);
+            return go;
+        }
+
+        // Inside its parent and not on top of any visible sibling.
+        static bool FitsFree(RectTransform rt)
+        {
+            Rect me = WorldRect(rt);
+            RectTransform parent = rt.parent as RectTransform;
+            if (parent != null)
+            {
+                Rect pr = WorldRect(parent);
+                if (me.xMin < pr.xMin - 0.5f || me.xMax > pr.xMax + 0.5f || me.yMin < pr.yMin - 0.5f || me.yMax > pr.yMax + 0.5f)
+                    return false;
+            }
+            Transform par = rt.parent;
+            for (int i = 0; i < par.childCount; i++)
+            {
+                RectTransform o = par.GetChild(i) as RectTransform;
+                if (o == null || o == rt || !o.gameObject.activeSelf) continue;
+                Rect or = WorldRect(o);
+                float m = 1f;
+                if (me.xMin + m < or.xMax && me.xMax - m > or.xMin && me.yMin + m < or.yMax && me.yMax - m > or.yMin)
+                    return false;
+            }
+            return true;
+        }
+
+        static Rect WorldRect(RectTransform t)
+        {
+            Vector3[] c = new Vector3[4];
+            t.GetWorldCorners(c);
+            return Rect.MinMaxRect(c[0].x, c[0].y, c[2].x, c[2].y);
+        }
+
+        void OnRestoreUnsaved()
+        {
+            string path = SafetyPath();
+            PoseConfig got = null;
+            string from = null;
+            string[] tries = { path, path + ".prev" };
+            for (int i = 0; i < tries.Length && got == null; i++)
+            {
+                try
+                {
+                    if (!File.Exists(tries[i])) continue;
+                    got = ParseConfigJson(File.ReadAllText(tries[i]));
+                    if (got != null) from = tries[i];
+                }
+                catch (Exception e) { Debug.LogWarning("[PoseStudio] could not read " + tries[i] + ": " + e.Message); }
+            }
+            if (got == null) { SetStatus("couldn't read the unsaved copy at " + path); return; }
+
+            config = got;
+            MergeBundled();
+            Rebind();
+            RefreshItemList();
+            safetyDirty = false;          // it is still on disk, exactly as restored
+            if (restoreButton != null) restoreButton.SetActive(false);
+            SetStatus("Restored your unsaved work from " + File.GetLastWriteTime(from).ToString("MMM d, h:mm tt")
+                      + ". Press Save to keep it.");
+        }
+
+        // ---- post-LateUpdate step --------------------------------------------------------
+        // A player-loop step at the very start of PostLateUpdate: after EVERY script's LateUpdate
+        // whatever its execution order (VNyan's expression pass included), before skinning and
+        // rendering. Blendshapes written here are the ones that get drawn.
+        public struct PoseStudioPostLate { }
+        static PoseApplier postLateApplier;
+        static bool postLateFailed;
+
+        void InstallPostLate()
+        {
+            postLateApplier = applier;
+            try
+            {
+                UnityEngine.LowLevel.PlayerLoopSystem loop = UnityEngine.LowLevel.PlayerLoop.GetCurrentPlayerLoop();
+                for (int i = 0; i < loop.subSystemList.Length; i++)
+                {
+                    if (loop.subSystemList[i].type != typeof(UnityEngine.PlayerLoop.PostLateUpdate)) continue;
+                    UnityEngine.LowLevel.PlayerLoopSystem sys = loop.subSystemList[i];
+                    List<UnityEngine.LowLevel.PlayerLoopSystem> subs =
+                        new List<UnityEngine.LowLevel.PlayerLoopSystem>(sys.subSystemList);
+                    for (int k = 0; k < subs.Count; k++)
+                        if (subs[k].type == typeof(PoseStudioPostLate)) return;    // already in
+                    UnityEngine.LowLevel.PlayerLoopSystem mine = new UnityEngine.LowLevel.PlayerLoopSystem();
+                    mine.type = typeof(PoseStudioPostLate);
+                    mine.updateDelegate = PostLateTick;
+                    subs.Insert(0, mine);
+                    sys.subSystemList = subs.ToArray();
+                    loop.subSystemList[i] = sys;
+                    UnityEngine.LowLevel.PlayerLoop.SetPlayerLoop(loop);
+                    Debug.Log("[PoseStudio] blendshapes now applied after VNyan's expressions (post-LateUpdate)");
+                    return;
+                }
+                Debug.LogWarning("[PoseStudio] PostLateUpdate not found, blendshapes fall back to LateUpdate");
+            }
+            catch (Exception e) { Debug.LogWarning("[PoseStudio] post-LateUpdate hook failed: " + e.Message); }
+            postLateFailed = true;
+            PoseApplier.lateBlendFallback = true;
+        }
+
+        static void PostLateTick()
+        {
+            try { if (postLateApplier != null) postLateApplier.ApplyLateBlends(); }
+            catch (Exception e)
+            {
+                if (!postLateFailed) Debug.LogWarning("[PoseStudio] late blendshape pass: " + e.Message);
+                postLateFailed = true;
+                PoseApplier.lateBlendFallback = true;     // keep blendshapes alive via LateUpdate
+            }
+        }
+
+        // ---- VRM clip guard -----------------------------------------------------------------
+        // A VRM blendshape clip whose mesh link has no path makes UniVRM throw inside VNyan's
+        // expression update EVERY frame, and the whole update aborts: face tracking, blinks and
+        // every clip stop together. Find any such link, say which clip it is, and blank the
+        // missing path to "" so UniVRM simply skips it instead of crashing.
+        float lastClipGuard = -999f;
+        readonly HashSet<string> clipGuardReported = new HashSet<string>();
+
+        void GuardVrmClips()
+        {
+            if (boundAvatar == null) return;
+            try
+            {
+                Component[] comps = boundAvatar.GetComponentsInChildren<Component>(true);
+                for (int c = 0; c < comps.Length; c++)
+                {
+                    if (comps[c] == null || comps[c].GetType().Name != "VRMBlendShapeProxy") continue;
+                    Transform root = comps[c].transform;
+                    System.Collections.IEnumerable clips =
+                        GetMember(GetMember(comps[c], "BlendShapeAvatar"), "Clips") as System.Collections.IEnumerable;
+                    if (clips == null) continue;
+                    foreach (object clip in clips)
+                    {
+                        if (clip == null) continue;
+                        string clipName = GetMember(clip, "BlendShapeName") as string;
+                        System.Reflection.FieldInfo vf = clip.GetType().GetField("Values");
+                        Array vals = vf != null ? vf.GetValue(clip) as Array : null;
+                        if (vals == null) continue;
+                        for (int i = 0; i < vals.Length; i++)
+                        {
+                            object b = vals.GetValue(i);
+                            if (b == null) continue;
+                            System.Reflection.FieldInfo pf = b.GetType().GetField("RelativePath");
+                            if (pf == null) continue;
+                            string path = pf.GetValue(b) as string;
+                            object idx = GetMember(b, "Index");
+                            string what = null;
+                            if (path == null)
+                            {
+                                pf.SetValue(b, "");          // boxed copy, written back below
+                                vals.SetValue(b, i);
+                                what = "has a mesh link with NO path (patched so VNyan stops crashing)";
+                            }
+                            else if (path.Length > 0)
+                            {
+                                Transform t = root.Find(path);
+                                SkinnedMeshRenderer r = t != null ? t.GetComponent<SkinnedMeshRenderer>() : null;
+                                if (r == null) what = "points at a mesh that is not on the avatar: '" + path + "'";
+                                else if (r.sharedMesh != null && idx != null &&
+                                         (Convert.ToInt32(idx) < 0 || Convert.ToInt32(idx) >= r.sharedMesh.blendShapeCount))
+                                    what = "points at blendshape #" + idx + " which '" + path + "' does not have";
+                            }
+                            if (what != null && clipGuardReported.Add(clipName + "|" + i + "|" + what))
+                                Debug.LogWarning("[PoseStudio] VRM clip '" + clipName + "' " + what);
+                        }
+                    }
+                }
+            }
+            catch (Exception e) { Debug.LogWarning("[PoseStudio] VRM clip check failed: " + e.Message); }
+        }
+
         void Update()
         {
+            SafetyTick();
+            if (Time.unscaledTime - lastClipGuard > 3f) { lastClipGuard = Time.unscaledTime; GuardVrmClips(); }
+            // Live config reload: if the file changes underneath us (hand edited, or written by
+            // a tool while tuning an animation to a model) pick it up instead of making the user
+            // restart VNyan, which on this app means reloading the avatar too.
+            if (Time.unscaledTime - lastConfigPoll > 1f)
+            {
+                lastConfigPoll = Time.unscaledTime;
+                try
+                {
+                    if (File.Exists(configPath))
+                    {
+                        System.DateTime w = File.GetLastWriteTimeUtc(configPath);
+                        if (configStamp != System.DateTime.MinValue && w != configStamp && w != ourWrite)
+                        {
+                            configStamp = w;
+                            bool kept = safetyDirty;
+                            if (kept) WriteSafetyCopy("before taking the changed file");
+                            LoadConfig();
+                            Rebind();
+                            RefreshItemList();
+                            Debug.Log("[PoseStudio] config changed on disk, reloaded");
+                            if (kept) ShowRestoreButton(System.DateTime.Now);
+                        }
+                        configStamp = w;
+                    }
+                }
+                catch { }
+            }
             if (timeline != null) timeline.Frame();
             if (listeningForHotkey) { CaptureHotkey(); return; }
             DetectHotkeys();
@@ -1645,7 +2366,7 @@ namespace PoseStudio
             listeningForHotkey = true;
             if (hotkeyLabel != null) hotkeyLabel.text = "press keys… (Esc cancels)";
             SetAssignButtonLabel("…");
-            SetStatus("listening — press a key, optionally holding Ctrl/Shift/Alt");
+            SetStatus("listening: press a key, optionally holding Ctrl/Shift/Alt");
         }
 
         void OnClearHotkey()
@@ -1654,7 +2375,7 @@ namespace PoseStudio
             if (selectedItem != null)
             {
                 selectedItem.hotkey = "";
-                SetStatus("cleared hotkey for '" + selectedItem.name + "' — Save to keep this change");
+                SetStatus("cleared hotkey for '" + selectedItem.name + "'. Save to keep this change");
             }
             UpdateHotkeyLabel();
         }
@@ -1688,7 +2409,7 @@ namespace PoseStudio
             if (selectedItem != null)
             {
                 selectedItem.hotkey = combo;
-                SetStatus("bound '" + selectedItem.name + "' to " + PrettyCombo(combo) + " — Save to keep this change");
+                SetStatus("bound '" + selectedItem.name + "' to " + PrettyCombo(combo) + ". Save to keep this change");
             }
             UpdateHotkeyLabel();
         }
@@ -1913,7 +2634,7 @@ namespace PoseStudio
                 suppressCallbacks = false;
             }
             SelectIK(idx);
-            SetStatus("added IK goal — set Upper/Lower/End bones + Space, then Reload");
+            SetStatus("added IK goal: set Upper/Lower/End bones + Space, then Reload");
         }
 
         void OnRemoveIK()
@@ -1923,7 +2644,7 @@ namespace PoseStudio
             selectedIK = null;
             RefreshIKList();
             Rebind();
-            SetStatus("removed IK goal — Save to keep this change");
+            SetStatus("removed IK goal. Save to keep this change");
         }
 
         void OnIKEnabledChanged(bool on) { if (suppressCallbacks || selectedIK == null) return; selectedIK.enabled = on; Rebind(); }
@@ -2023,6 +2744,7 @@ namespace PoseStudio
                 browserWindow = null;
             }
             if (browserWindow == null) return;
+            PoseUtil.CleanDashes(browserWindow);
 
             RectTransform brt = browserWindow.GetComponent<RectTransform>();
             if (brt != null) brt.anchoredPosition = new Vector2(0f, 0f);
@@ -2034,6 +2756,7 @@ namespace PoseStudio
             Button close = FindIn<Button>(browserWindow, "Button_BoneClose");
             if (close != null) close.onClick.AddListener(CloseBrowser);
 
+            PoseUtil.FastDropdownScroll(browserWindow, 40f);
             browserWindow.SetActive(false);
         }
 
@@ -2058,21 +2781,21 @@ namespace PoseStudio
             if (browserTitle != null)
             {
                 if (mode == "trigger")
-                    browserTitle.text = "Trigger Source — pick a driving blendshape";
+                    browserTitle.text = "Trigger Source: pick a driving blendshape";
                 else if (mode == "blend")
-                    browserTitle.text = "Blendshapes — pick one to add";
+                    browserTitle.text = "Blendshapes: pick one to add";
                 else if (mode == "mesh")
-                    browserTitle.text = "Mesh Objects — pick one to add";
+                    browserTitle.text = "Mesh Objects: pick one to add";
                 else if (mode == "hidemesh")
-                    browserTitle.text = "Hide Meshes — toggle which to hide";
+                    browserTitle.text = "Hide Meshes: toggle which to hide";
                 else if (mode == "export")
-                    browserTitle.text = "Export Poses — tick items, then Export";
+                    browserTitle.text = "Export Poses: tick items, then Export";
                 else if (mode == "importconflict")
-                    browserTitle.text = "Import — some names already exist";
+                    browserTitle.text = "Import: some names already exist";
                 else if (mode == "mmdadjust")
-                    browserTitle.text = "MMD Import — adjust orientation (previews live)";
+                    browserTitle.text = "MMD Import: adjust orientation (previews live)";
                 else
-                    browserTitle.text = "Model Bones — pick one to add";
+                    browserTitle.text = "Model Bones: pick one to add";
             }
             EnsureAvatar();
             RebuildTree();
@@ -2133,7 +2856,7 @@ namespace PoseStudio
             outCfg.items = new List<PoseItem>();
             for (int i = 0; i < config.items.Count; i++)
                 if (config.items[i] != null && exportSel.Contains(config.items[i].name)) outCfg.items.Add(config.items[i]);
-            try { File.WriteAllText(path, JsonConvert.SerializeObject(outCfg, Formatting.Indented)); }
+            try { File.WriteAllText(path, JsonConvert.SerializeObject(outCfg, Formatting.None)); }
             catch (System.Exception e) { SetStatus("export failed: " + e.Message); return; }
             CloseBrowser();
             SetStatus("exported " + outCfg.items.Count + " item(s) to " + Path.GetFileName(path));
@@ -2212,7 +2935,7 @@ namespace PoseStudio
             RefreshItemListKeepIndex(0);
             SetStatus("imported: " + added + " added"
                 + (replaced > 0 ? ", " + replaced + " overwritten" : "")
-                + (skipped > 0 ? ", " + skipped + " skipped" : "") + " — Save to keep.");
+                + (skipped > 0 ? ", " + skipped + " skipped" : "") + ". Save to keep.");
         }
 
         const float ROW_H = 22f;
@@ -2284,7 +3007,7 @@ namespace PoseStudio
                 for (int i = 0; i < bone.childCount; i++)
                     AddBoneRow(bone.GetChild(i), depth + 1, ref y);
 
-            SetBrowserStatus("avatar '" + boundAvatar.name + "' — click a bone to add it");
+            SetBrowserStatus("avatar '" + boundAvatar.name + "': click a bone to add it");
         }
 
         void ToggleBoneExpanded(Transform bone)
@@ -2309,7 +3032,7 @@ namespace PoseStudio
             // Bones are listed first, so the new bone is the last bone entry.
             SelectTransformInDropdown(selectedItem.bones.Count - 1);
             SetBrowserStatus("added bone '" + bone.name + "' to '" + selectedItem.name + "'");
-            SetStatus("added bone '" + bone.name + "' — set its offsets, then Save");
+            SetStatus("added bone '" + bone.name + "': set its offsets, then Save");
         }
 
         // ----- mesh-object transform targets -----
@@ -2346,7 +3069,7 @@ namespace PoseStudio
                 }
                 Rebind();
                 RebuildTree();
-                SetStatus("hide list: " + selectedItem.hideMeshes.Count + " mesh(es) — Save to keep");
+                SetStatus("hide list: " + selectedItem.hideMeshes.Count + " mesh(es). Save to keep");
                 return;
             }
 
@@ -2362,7 +3085,7 @@ namespace PoseStudio
             int bones = selectedItem.bones != null ? selectedItem.bones.Count : 0;
             SelectTransformInDropdown(bones + selectedItem.meshes.Count - 1);
             SetBrowserStatus("added mesh '" + mesh.name + "' to '" + selectedItem.name + "'");
-            SetStatus("added mesh '" + mesh.name + "' — set its offsets, then Save");
+            SetStatus("added mesh '" + mesh.name + "': set its offsets, then Save");
         }
 
         // ----- mesh-object tree (flat list of renderer transforms) -----
@@ -2395,13 +3118,93 @@ namespace PoseStudio
 
             SetBrowserStatus(hideMode
                 ? "click a mesh to hide/show it while this item is active"
-                : "avatar '" + boundAvatar.name + "' — click a mesh object to add it");
+                : "avatar '" + boundAvatar.name + "': click a mesh object to add it");
         }
 
         // ----- blendshape tree (mesh -> shapes) -----
 
+        // Every VRM blendshape clip the bound avatar has. Read from the avatar's own clip list
+        // (VRMBlendShapeProxy, via reflection so UniVRM is not a build dependency), plus anything
+        // VNyan currently reports, which also catches clips added by other plugins.
+        List<string> VrmClipNames()
+        {
+            List<string> names = new List<string>();
+            HashSet<string> seen = new HashSet<string>();
+            if (boundAvatar != null)
+            {
+                try
+                {
+                    Component[] comps = boundAvatar.GetComponentsInChildren<Component>(true);
+                    for (int c = 0; c < comps.Length; c++)
+                    {
+                        if (comps[c] == null || comps[c].GetType().Name != "VRMBlendShapeProxy") continue;
+                        object avatarAsset = GetMember(comps[c], "BlendShapeAvatar");
+                        System.Collections.IEnumerable clips = GetMember(avatarAsset, "Clips") as System.Collections.IEnumerable;
+                        if (clips == null) continue;
+                        foreach (object clip in clips)
+                        {
+                            string n = GetMember(clip, "BlendShapeName") as string;
+                            if (!string.IsNullOrEmpty(n) && seen.Add(n)) names.Add(n);
+                        }
+                    }
+                }
+                catch (Exception e) { Debug.LogWarning("[PoseStudio] reading VRM clips: " + e.Message); }
+            }
+            try
+            {
+                Dictionary<string, float> live = VNyanInterface.VNyanInterface.VNyanAvatar.getBlendshapesInstant();
+                if (live != null)
+                    foreach (string k in live.Keys)
+                        if (!string.IsNullOrEmpty(k) && seen.Add(k)) names.Add(k);
+            }
+            catch { }
+            return names;
+        }
+
+        static object GetMember(object o, string name)
+        {
+            if (o == null) return null;
+            Type t = o.GetType();
+            System.Reflection.PropertyInfo p = t.GetProperty(name);
+            if (p != null) return p.GetValue(o, null);
+            System.Reflection.FieldInfo f = t.GetField(name);
+            return f != null ? f.GetValue(o) : null;
+        }
+
+        bool vrmClipsExpanded = true;
+
         void BuildBlendTree(ref float y)
         {
+            // VRM blendshape clips first: the expressions most avatars are driven by. Not offered
+            // as a trigger source, which reads raw mesh weights.
+            if (browserMode == "blend")
+            {
+                List<string> clipNames = VrmClipNames();
+                if (clipNames.Count > 0)
+                {
+                    GameObject crow = NewRow("VRMClips", y);
+                    MakeRuntimeButton(crow.transform, vrmClipsExpanded ? "-" : "+",
+                        0f, 0f, INDENT + 2f, ROW_H,
+                        new Color(0.30f, 0.25f, 0.35f, 1f), Color.white, 13,
+                        delegate { vrmClipsExpanded = !vrmClipsExpanded; RebuildTree(); });
+                    MakeRuntimeButton(crow.transform, "VRM Blendshape Clips  (" + clipNames.Count + ")",
+                        INDENT + 4f, 0f, 1000f, ROW_H,
+                        new Color(0f, 0f, 0f, 0f), new Color(1f, 0.85f, 1f, 1f), 13,
+                        delegate { vrmClipsExpanded = !vrmClipsExpanded; RebuildTree(); });
+                    y += ROW_H;
+                    if (vrmClipsExpanded)
+                        for (int c = 0; c < clipNames.Count; c++)
+                        {
+                            string capClip = clipNames[c];
+                            GameObject srow = NewRow("Clip_" + capClip, y);
+                            MakeRuntimeButton(srow.transform, capClip, INDENT + 18f, 0f, 1000f, ROW_H,
+                                new Color(0f, 0f, 0f, 0f), new Color(1f, 0.9f, 1f, 1f), 12,
+                                delegate { OnClipPicked(capClip); });
+                            y += ROW_H;
+                        }
+                }
+            }
+
             List<SkinnedMeshRenderer> rends = PoseUtil.Renderers(boundAvatar);
             if (rends.Count == 0)
             {
@@ -2445,7 +3248,7 @@ namespace PoseStudio
                 }
             }
 
-            SetBrowserStatus("avatar '" + boundAvatar.name + "' — expand a mesh, click a blendshape");
+            SetBrowserStatus("avatar '" + boundAvatar.name + "': expand a mesh, click a blendshape");
         }
 
         void ToggleMeshExpanded(int id)
@@ -2461,6 +3264,31 @@ namespace PoseStudio
         {
             if (browserMode == "trigger") OnTriggerSourcePicked(r, shape);
             else OnBlendPicked(r, shape);
+        }
+
+        void OnClipPicked(string clip)
+        {
+            if (string.IsNullOrEmpty(clip) || selectedItem == null) return;
+            if (selectedItem.blendshapes == null) selectedItem.blendshapes = new List<BlendTarget>();
+            BlendTarget bt = new BlendTarget();
+            bt.mesh = BlendTarget.VRM_CLIP;
+            bt.shape = clip;
+            bt.weight = 100f;
+            selectedItem.blendshapes.Add(bt);
+
+            Rebind();
+            RefreshBlendList();
+            int idx = selectedItem.blendshapes.Count - 1;
+            if (blendDropdown != null && idx < blendDropdown.options.Count)
+            {
+                suppressCallbacks = true;
+                blendDropdown.value = idx;
+                blendDropdown.RefreshShownValue();
+                suppressCallbacks = false;
+                SelectBlendTarget(idx);
+            }
+            SetBrowserStatus("added VRM clip '" + clip + "'");
+            SetStatus("added VRM clip '" + clip + "': set its weight, then Save");
         }
 
         void OnBlendPicked(SkinnedMeshRenderer r, string shape)
@@ -2486,7 +3314,7 @@ namespace PoseStudio
                 SelectBlendTarget(idx);
             }
             SetBrowserStatus("added blendshape '" + shape + "'");
-            SetStatus("added blendshape '" + shape + "' — set its weight, then Save");
+            SetStatus("added blendshape '" + shape + "': set its weight, then Save");
         }
 
         // ----- runtime row + button helpers -----
@@ -2600,33 +3428,114 @@ namespace PoseStudio
                 }
 
                 string json = File.ReadAllText(configPath);
-                PoseConfig parsed = JsonConvert.DeserializeObject<PoseConfig>(json);
+                PoseConfig parsed = ParseConfigJson(json);
                 if (parsed != null)
                 {
-                    if (parsed.settings == null) parsed.settings = new PoseSettings();
-                    if (parsed.items == null) parsed.items = new List<PoseItem>();
-                    // Older configs predate meshes/keyframes — make sure no list is null.
-                    for (int i = 0; i < parsed.items.Count; i++)
-                    {
-                        PoseItem it = parsed.items[i];
-                        if (it == null) continue;
-                        if (it.bones == null) it.bones = new List<BoneTarget>();
-                        if (it.meshes == null) it.meshes = new List<MeshTarget>();
-                        if (it.blendshapes == null) it.blendshapes = new List<BlendTarget>();
-                        if (it.keyframes == null) it.keyframes = new List<PoseKeyframe>();
-                        for (int kfi = 0; kfi < it.keyframes.Count; kfi++)
-                        {
-                            PoseKeyframe kf = it.keyframes[kfi];
-                            if (kf != null && kf.channels == null) kf.channels = new List<KeyframeChannel>();
-                        }
-                    }
                     config = parsed;
+                    MergeBundled();
+                    safetyDirty = false;
                 }
             }
             catch (Exception e)
             {
                 Debug.LogError("[PoseStudio] failed to load config: " + e.Message);
                 if (config == null) config = new PoseConfig();
+            }
+        }
+
+        // Shared by LoadConfig and Restore unsaved.
+        static PoseConfig ParseConfigJson(string json)
+        {
+            PoseConfig parsed = JsonConvert.DeserializeObject<PoseConfig>(json);
+            if (parsed != null)
+            {
+                if (parsed.settings == null) parsed.settings = new PoseSettings();
+                if (parsed.items == null) parsed.items = new List<PoseItem>();
+                // Older configs predate meshes/keyframes, make sure no list is null.
+                for (int i = 0; i < parsed.items.Count; i++)
+                {
+                    PoseItem it = parsed.items[i];
+                    if (it == null) continue;
+                    if (it.bones == null) it.bones = new List<BoneTarget>();
+                    if (it.meshes == null) it.meshes = new List<MeshTarget>();
+                    if (it.blendshapes == null) it.blendshapes = new List<BlendTarget>();
+                    if (it.keyframes == null) it.keyframes = new List<PoseKeyframe>();
+                    for (int kfi = 0; kfi < it.keyframes.Count; kfi++)
+                    {
+                        PoseKeyframe kf = it.keyframes[kfi];
+                        if (kf != null && kf.channels == null) kf.channels = new List<KeyframeChannel>();
+                    }
+                }
+            }
+            return parsed;
+        }
+
+        // Animations that ship WITH the plugin. Each .json beside the DLL (in "builtin\\") holds
+        // one or more items. Each one is offered once: it is added if the user does not already
+        // have that name, and its name is remembered in settings.bundledOffered, so deleting or
+        // renaming it later sticks. Nothing is saved here; the user's next Save keeps it.
+        void MergeBundled()
+        {
+            try
+            {
+                // A VNyan plugin is loaded from bytes, so the assembly has no file path to
+                // work from: look next to VNyan itself first and only fall back to the
+                // assembly location (which is empty in the app, but set in a test host).
+                string folder = null;
+                string vnyanRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                string[] tries = {
+                    Path.Combine(vnyanRoot, Path.Combine("Items", Path.Combine("Assemblies", Path.Combine("PoseStudio", "builtin")))),
+                    Path.Combine(vnyanRoot, Path.Combine("Items", Path.Combine("Assemblies", "builtin"))),
+                };
+                for (int t = 0; t < tries.Length && folder == null; t++)
+                    if (Directory.Exists(tries[t])) folder = tries[t];
+                if (folder == null)
+                {
+                    string dir = null;
+                    try { dir = Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location); }
+                    catch { }
+                    if (!string.IsNullOrEmpty(dir) && Directory.Exists(Path.Combine(dir, "builtin")))
+                        folder = Path.Combine(dir, "builtin");
+                }
+                if (folder == null) return;
+
+                if (config.settings == null) config.settings = new PoseSettings();
+                if (config.settings.bundledOffered == null) config.settings.bundledOffered = new List<string>();
+                List<string> offered = config.settings.bundledOffered;
+                string[] files = Directory.GetFiles(folder, "*.json");
+                for (int f = 0; f < files.Length; f++)
+                {
+                    PoseConfig bundled;
+                    try { bundled = JsonConvert.DeserializeObject<PoseConfig>(File.ReadAllText(files[f])); }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning("[PoseStudio] bundled animation '" + Path.GetFileName(files[f])
+                                         + "' could not be read: " + ex.Message);
+                        continue;
+                    }
+                    if (bundled == null || bundled.items == null) continue;
+                    for (int i = 0; i < bundled.items.Count; i++)
+                    {
+                        PoseItem it = bundled.items[i];
+                        if (it == null || string.IsNullOrEmpty(it.name)) continue;
+                        bool have = offered.Contains(it.name);
+                        for (int j = 0; j < config.items.Count && !have; j++)
+                            if (config.items[j] != null && config.items[j].name == it.name) have = true;
+                        if (!offered.Contains(it.name)) offered.Add(it.name);
+                        if (have) continue;
+                        it.active = false;                 // never start moving on its own
+                        if (it.bones == null) it.bones = new List<BoneTarget>();
+                        if (it.meshes == null) it.meshes = new List<MeshTarget>();
+                        if (it.blendshapes == null) it.blendshapes = new List<BlendTarget>();
+                        if (it.keyframes == null) it.keyframes = new List<PoseKeyframe>();
+                        config.items.Add(it);
+                        Debug.Log("[PoseStudio] added bundled animation '" + it.name + "'");
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[PoseStudio] bundled animations skipped: " + e.Message);
             }
         }
 
@@ -2643,10 +3552,16 @@ namespace PoseStudio
                 string dir = Path.GetDirectoryName(target);
                 if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 
-                string json = JsonConvert.SerializeObject(config, Formatting.Indented);
+                // Compact, never indented: one 500-key animation is 6 MB compact and 18 MB pretty,
+                // and past about 45 MB the JSON reader throws while the plugin is starting,
+                // which takes every plugin loaded after this one down with it.
+                string json = JsonConvert.SerializeObject(config, Formatting.None);
                 File.WriteAllText(target, json);
                 configPath = target;
+                try { ourWrite = File.GetLastWriteTimeUtc(configPath); configStamp = ourWrite; } catch { }
                 SetStatus("Saved to " + target);
+                safetyDirty = false;
+                if (restoreButton != null) restoreButton.SetActive(false);
             }
             catch (Exception e)
             {

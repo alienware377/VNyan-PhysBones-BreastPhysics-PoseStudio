@@ -8,7 +8,7 @@ using UnityEngine.UI;
 namespace PoseStudio
 {
     // Timeline editor: a SEPARATE window (opened from the main Pose Studio window) that
-    // visualises and edits an animation item's keyframe timeline — YouCut-style strip
+    // visualises and edits an animation item's keyframe timeline, YouCut-style strip
     // with draggable key diamonds, a scrubbable playhead, transport, zoom/pan, easing
     // per segment, capture/add/delete. It is purely a second VIEW over the existing
     // PoseItem.keyframes data: the classic dropdown + sliders workflow in the main
@@ -51,7 +51,7 @@ namespace PoseStudio
         readonly HashSet<string> expandedGroups = new HashSet<string>();
         readonly HashSet<string> maskOff = new HashSet<string>();   // excluded cats ("bone") or full channel ids
         readonly List<RectTransform> gutterRows = new List<RectTransform>();  // pan-pinned lane labels
-        PoseKeyframe clipboard;         // survives item switches — paste works across items
+        PoseKeyframe clipboard;         // survives item switches, paste works across items
         const float GUT_W = 150f;       // gutter (lane label column) width
         const float LANE_TOP = 26f;     // lanes area starts under the ruler
         const float LANE_H = 17f;
@@ -70,6 +70,8 @@ namespace PoseStudio
 
             RectTransform wrt = window.GetComponent<RectTransform>();
             if (wrt != null) wrt.anchoredPosition = new Vector2(0f, -40f);
+            PoseUtil.FastDropdownScroll(window, 40f);
+            PoseUtil.CleanDashes(window);
 
             title = FindIn<Text>("Title");
             timeText = FindIn<Text>("Text_TLTime");
@@ -142,6 +144,8 @@ namespace PoseStudio
         }
 
         // ---------------------------------------------------------------- show/hide
+        public bool IsOpen { get { return window != null && window.activeSelf; } }
+
         public void ToggleVisible()
         {
             if (window == null) { plugin.PublicStatus("timeline window unavailable (prefab missing)"); return; }
@@ -270,7 +274,7 @@ namespace PoseStudio
             if (it == null || ks == null || ks.Count == 0 || content == null || view == null)
             { builtKeyCount = -1; return; }
             builtKeyCount = ks.Count;
-            if (title != null) title.text = "Timeline — " + it.name;
+            if (title != null) title.text = "Timeline: " + it.name;
 
             bool lanes = lanesToggle != null && lanesToggle.isOn;
             padLeft = lanes ? GUT_W + 10f : PAD;
@@ -422,7 +426,7 @@ namespace PoseStudio
         {
             List<PoseKeyframe> ks = Keys();
             if (ks == null || idx <= 0 || idx >= ks.Count)
-            { if (idx == 0) SetTlStatus("key 1 anchors the loop start — retime the others around it"); return; }
+            { if (idx == 0) SetTlStatus("key 1 anchors the loop start: retime the others around it"); return; }
             float lx;
             if (!PointerToContentX(e, out lx)) return;
             float tPrev = KeyTime(idx - 1);
@@ -455,7 +459,7 @@ namespace PoseStudio
             if (boundItem == null) return;
             bool p = plugin.ApplierRef.GetPaused(boundItem);
             plugin.ApplierRef.SetPaused(boundItem, !p);
-            if (!boundItem.active) SetTlStatus("note: this item's toggle is OFF — turn it on to see the animation");
+            if (!boundItem.active) SetTlStatus("note: this item's toggle is OFF. Turn it on to see the animation");
         }
 
         void OnSpeedSlider(float v)
@@ -543,7 +547,7 @@ namespace PoseStudio
             nk.channels = InterpChannels(ks[a], ks[b], u);
             ks[a].seconds = into;
             plugin.TimelineInsertKey(a + 1, nk);
-            SetTlStatus("added key at " + t.ToString("0.00") + "s (pose interpolated — animation unchanged)");
+            SetTlStatus("added key at " + t.ToString("0.00") + "s (pose interpolated, animation unchanged)");
         }
 
         // Interpolate the two keys' channel lists so the inserted key reproduces the pose
@@ -783,7 +787,7 @@ namespace PoseStudio
             AddTrigger(box, EventTriggerType.PointerDown, delegate(BaseEventData d)
             {
                 if (!laneRef.group && maskOff.Contains(laneRef.cat))
-                { SetTlStatus("its whole group is excluded — click the group's box first"); return; }
+                { SetTlStatus("its whole group is excluded: click the group's box first"); return; }
                 if (maskOff.Contains(maskKey)) maskOff.Remove(maskKey); else maskOff.Add(maskKey);
                 SetTlStatus((maskOff.Contains(maskKey) ? "excluded from" : "included in") + " capture/paste: " + label.Trim());
                 Rebuild();
@@ -809,7 +813,7 @@ namespace PoseStudio
         {
             maskOff.Add("bone"); maskOff.Add("mesh"); maskOff.Add("blend"); maskOff.Add("ik");
             Rebuild();
-            SetTlStatus("capture/paste mask: everything excluded — tick lanes back on in the lanes view");
+            SetTlStatus("capture/paste mask: everything excluded. Tick lanes back on in the lanes view");
         }
 
         // ---------------------------------------------------------------- P2: copy/paste
@@ -864,7 +868,7 @@ namespace PoseStudio
             if (ks == null || selIdx < 0 || selIdx >= ks.Count) { SetTlStatus("select a key first"); return; }
             clipboard = DeepCloneKey(ks[selIdx]);
             int n = clipboard.channels != null ? clipboard.channels.Count : 0;
-            SetTlStatus("copied key " + (selIdx + 1) + " (" + n + " channels) — paste works across items too");
+            SetTlStatus("copied key " + (selIdx + 1) + " (" + n + " channels). Paste works across items too");
         }
 
         void OnPasteInto()
@@ -912,7 +916,7 @@ namespace PoseStudio
             PoseItem cur = plugin.CurrentItem;
             if (cur != boundItem || cur == null || !cur.useKeyframes)
             {
-                // the main window moved to another item — follow it (or close if unusable)
+                // the main window moved to another item, follow it (or close if unusable)
                 if (cur != null && cur.type == "animation" && cur.useKeyframes)
                 { boundItem = cur; selIdx = plugin.CurrentKeyIndex(); Rebuild(); }
                 else { Hide(); return; }

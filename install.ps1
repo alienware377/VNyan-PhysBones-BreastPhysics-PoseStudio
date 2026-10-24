@@ -1,4 +1,4 @@
-# VNyan Physics Plugins installer (PhysBones / JigglePhysics / PoseStudio)
+# VNyan Pose Studio installer
 # - Looks for your VNyan folder (a running VNyan, VNyan's own log, Steam, itch), then lets you
 #   confirm it or open your VNyan folder yourself
 # - Retires v1.x "Jayo"-named files so old and new versions never load together
@@ -15,17 +15,17 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-# Anything unexpected still gets a readable message and a pause - a double-clicked window
+# Anything unexpected still gets a readable message and a pause; a double-clicked window
 # would otherwise just disappear.
 trap {
     Write-Host ""
-    Write-Host ("Sorry - something went wrong: " + $_.Exception.Message) -ForegroundColor Red
+    Write-Host ("Sorry, something went wrong: " + $_.Exception.Message) -ForegroundColor Red
     Write-Host "Nothing else was changed."
     if (-not $Yes) { Read-Host "Press Enter to close" | Out-Null }
     exit 1
 }
-$plugins = @("PhysBones", "JigglePhysics", "PoseStudio")
-$legacy  = @{ "PhysBones" = "JayoPhysBones"; "JigglePhysics" = "JayoJigglePhysics"; "PoseStudio" = "JayoPoseStudio" }
+$plugins = @("PoseStudio")
+$legacy  = @{ "PoseStudio" = "JayoPoseStudio" }
 
 function Ask([string]$question, [bool]$defaultYes) {
     if ($Yes) { return $true }
@@ -137,7 +137,7 @@ if ($ListFound) {
 $here = Split-Path -Parent $PSCommandPath
 $payload = $null
 foreach ($base in @($here, (Join-Path $here "dist"), (Join-Path $here "plugins"))) {
-    if (Test-Path -LiteralPath (Join-Path $base "PhysBones\PhysBones.dll")) { $payload = $base; break }
+    if (Test-Path -LiteralPath (Join-Path $base ($plugins[0] + "\" + $plugins[0] + ".dll"))) { $payload = $base; break }
 }
 if (-not $payload) {
     Write-Host "ERROR: the plugin folders weren't found next to this script." -ForegroundColor Red
@@ -148,8 +148,8 @@ if (-not $payload) {
 # ---- pick the VNyan folder ----
 if (-not $Target) {
     Write-Host ""
-    Write-Host "VNyan Physics Plugins installer" -ForegroundColor Cyan
-    Write-Host "-------------------------------"
+    Write-Host "VNyan Pose Studio installer" -ForegroundColor Cyan
+    Write-Host "---------------------------"
     Write-Host "Looking for VNyan..."
     $found = @(Find-VNyan)
     if ($found.Count -eq 1) {
@@ -165,13 +165,13 @@ if (-not $Target) {
             if ([int]::TryParse($a, [ref]$n) -and $n -ge 1 -and $n -le $found.Count) { $Target = $found[$n - 1] }
         }
     } else {
-        Write-Host "Couldn't find VNyan by myself - that's okay."
+        Write-Host "Couldn't find VNyan by myself. That's okay."
     }
 
     if (-not $Target) {
         if ($Yes) { Write-Host "ERROR: no VNyan folder found. Run again with -Target <your VNyan folder>." -ForegroundColor Red; exit 1 }
         Write-Host ""
-        Write-Host "Please open your VNyan folder - the one with VNyan.exe inside it."
+        Write-Host "Please open your VNyan folder (the one with VNyan.exe inside it)."
         Add-Type -AssemblyName System.Windows.Forms | Out-Null
         $dlg = New-Object System.Windows.Forms.FolderBrowserDialog
         $dlg.Description = "Open your VNyan folder (the one with VNyan.exe inside it)"
@@ -209,7 +209,7 @@ function Test-VNyanInTheWay([string]$root) {
 }
 while (Test-VNyanInTheWay $Target) {
     Write-Host ""
-    Write-Host "VNyan is open - it locks its plugin files. Please close it first." -ForegroundColor Yellow
+    Write-Host "VNyan is open, and it locks its plugin files. Please close it first." -ForegroundColor Yellow
     if ($Yes) { exit 1 }
     Read-Host "Press Enter once VNyan is closed" | Out-Null
 }
@@ -231,10 +231,10 @@ if (-not (Test-Writable $assemblies)) {
         Stop-Here 1
     }
     Write-Host ""
-    Write-Host "Your VNyan folder is write-protected - asking Windows for admin rights..." -ForegroundColor Yellow
+    Write-Host "Your VNyan folder is write-protected, so asking Windows for admin rights..." -ForegroundColor Yellow
     # Admin windows can't always see the drive this was unzipped on (mapped, network or cloud
     # drives), so hand them a copy in a folder every account can read.
-    $stage = Join-Path $env:ProgramData ("VNyanPhysicsInstall_" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
+    $stage = Join-Path $env:ProgramData ("VNyanPoseStudioInstall_" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
     $stageDist = Join-Path $stage "dist"
     try {
         New-Item -ItemType Directory -Force -Path $stageDist | Out-Null
@@ -245,12 +245,12 @@ if (-not (Test-Writable $assemblies)) {
         $srcDefaults = Join-Path $payload "defaults"
         if (Test-Path -LiteralPath $srcDefaults) { Copy-Item -LiteralPath $srcDefaults -Destination $stageDist -Recurse -Force }
         Copy-Item -LiteralPath $PSCommandPath -Destination (Join-Path $stage "install.ps1") -Force
-        if (-not (Test-Path -LiteralPath (Join-Path $stageDist "PhysBones\PhysBones.dll"))) {
+        if (-not (Test-Path -LiteralPath (Join-Path $stageDist ($plugins[0] + "\" + $plugins[0] + ".dll")))) {
             throw "couldn't copy the plugin files to $stage"
         }
 
         # A trailing backslash would turn the closing quote into an escaped one and eat the
-        # switches after it, so double it up - Windows folds it back to one.
+        # switches after it, so double it up; Windows folds it back to one.
         $targetArg = $Target -replace '(\\+)$', '$1$1'
         $appDataArg = Join-Path $env:USERPROFILE "AppData\LocalLow\Suvidriel\VNyan"
         $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass",
@@ -261,7 +261,7 @@ if (-not (Test-Writable $assemblies)) {
     }
     catch {
         try { Remove-Item -LiteralPath $stage -Recurse -Force } catch {}
-        Write-Host ("Nothing was installed - " + $_.Exception.Message) -ForegroundColor Yellow
+        Write-Host ("Nothing was installed: " + $_.Exception.Message) -ForegroundColor Yellow
         Write-Host "(If Windows asked for admin rights and you said no, that's all this means.)"
         Stop-Here 1
     }
@@ -290,6 +290,24 @@ foreach ($p in $plugins) {
             $ok = $false
         }
     }
+    # Animations that ship with a plugin (its "builtin" folder, used by Pose Studio). The plugin adds any
+    # it has not offered before, and never touches one you have edited or deleted.
+    $srcBuiltin = Join-Path $src "builtin"
+    if (Test-Path -LiteralPath $srcBuiltin) {
+        $dstBuiltin = Join-Path $dst "builtin"
+        New-Item -ItemType Directory -Force -Path $dstBuiltin | Out-Null
+        foreach ($b in (Get-ChildItem -LiteralPath $srcBuiltin -File -Filter "*.json" -ErrorAction SilentlyContinue)) {
+            $bt = Join-Path $dstBuiltin $b.Name
+            Copy-Item -LiteralPath $b.FullName -Destination $bt -Force
+            try { Unblock-File -LiteralPath $bt } catch {}
+            if ((Get-FileHash -LiteralPath $b.FullName).Hash -ne (Get-FileHash -LiteralPath $bt).Hash) {
+                Write-Host ("ERROR: " + $b.Name + " didn't copy correctly.") -ForegroundColor Red
+                $ok = $false
+            }
+            else { Write-Host ("  bundled animation: " + $b.BaseName) -ForegroundColor DarkGray }
+        }
+    }
+
     if (-not $ok) { Stop-Here 1 }
     $installed += $p
     Write-Host ("  installed " + $p) -ForegroundColor Green
@@ -307,7 +325,7 @@ foreach ($p in $plugins) {
                 if (Test-Path -LiteralPath (Join-Path $dir $bak)) { $bak = $bak + "." + (Get-Date -Format "yyyyMMdd-HHmmss") }
                 Rename-Item -LiteralPath $f.FullName -NewName $bak -Force
                 Write-Host ("  retired v1 file: " + $f.Name) -ForegroundColor DarkYellow
-            } catch { Write-Host ("  couldn't retire " + $f.Name + " - please rename it yourself") -ForegroundColor Yellow }
+            } catch { Write-Host ("  couldn't retire " + $f.Name + " (please rename it yourself)") -ForegroundColor Yellow }
         }
     }
 }
@@ -323,7 +341,7 @@ if (Test-Path -LiteralPath $defaults) {
     if (-not $appData) { $appData = Join-Path $env:USERPROFILE "AppData\LocalLow\Suvidriel\VNyan" }
     foreach ($j in (Get-ChildItem -LiteralPath $defaults -Filter "*.json" -ErrorAction SilentlyContinue)) {
         try {
-            # every place the plugins look for settings - if any of them has a file, yours wins
+            # every place the plugins look for settings; if any of them has a file, yours wins
             $mine = @(
                 (Join-Path $appData $j.Name),
                 (Join-Path $Target $j.Name),
@@ -335,12 +353,12 @@ if (Test-Path -LiteralPath $defaults) {
             if ($have) { continue }
             Copy-Item -LiteralPath $j.FullName -Destination (Join-Path $Target $j.Name) -Force
             Write-Host ("  starter config: " + $j.Name) -ForegroundColor DarkGray
-        } catch { Write-Host ("  (couldn't write " + $j.Name + " - skipping, your settings are safe)") -ForegroundColor DarkGray }
+        } catch { Write-Host ("  (couldn't write " + $j.Name + ": skipped, your settings are safe)") -ForegroundColor DarkGray }
     }
 }
 
 # the admin copy made above is no longer needed
-if ($Elevated -and $here -like (Join-Path $env:ProgramData "VNyanPhysicsInstall_*")) {
+if ($Elevated -and $here -like (Join-Path $env:ProgramData "VNyanPoseStudioInstall_*")) {
     try { Remove-Item -LiteralPath $here -Recurse -Force } catch {}
 }
 

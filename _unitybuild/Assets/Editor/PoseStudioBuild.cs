@@ -282,7 +282,7 @@ public static class PoseStudioBuild
 
         // ---------- header (fixed) ----------
         float hy = 10f;
-        MakeText(root.transform, "Title", "Pose Studio — Toggles & Animations",
+        MakeText(root.transform, "Title", "Pose Studio: Toggles & Animations",
             outerX, hy, outerW, 22f, 15, TextAnchor.MiddleCenter, FontStyle.Bold);
         hy += 26f;
         MakeText(root.transform, "Label_Status", "ready",
@@ -418,7 +418,7 @@ public static class PoseStudioBuild
         // Each keyframe stores its OWN pose: select a key, then the Transform and
         // Blendshape sliders above edit that key's pose. "Secs to Next" is the time the
         // animation takes to interpolate from this key to the following one.
-        MakeText(c, "Hdr_Keyframes", "— Keyframe poses —", cX, y, cW, 20f,
+        MakeText(c, "Hdr_Keyframes", "Keyframe poses", cX, y, cW, 20f,
             12, TextAnchor.MiddleCenter, FontStyle.Bold);
         y += 24f;
 
@@ -446,7 +446,7 @@ public static class PoseStudioBuild
         y += 34f;
 
         // ---- Blendshape trigger section ----
-        MakeText(c, "Hdr_Trigger", "— Blendshape trigger —", cX, y, cW, 20f,
+        MakeText(c, "Hdr_Trigger", "Blendshape trigger", cX, y, cW, 20f,
             12, TextAnchor.MiddleCenter, FontStyle.Bold);
         y += 24f;
 
@@ -472,7 +472,7 @@ public static class PoseStudioBuild
         MakeSliderRow(c, cX, cW, "tscale", "Strength %", 0f, 100f, 100f, ref y);
 
         // ---- Transform section (bones AND mesh objects) ----
-        MakeText(c, "Hdr_Bone", "— Transform (bones & meshes) —", cX, y, cW, 20f,
+        MakeText(c, "Hdr_Bone", "Transform (bones & meshes)", cX, y, cW, 20f,
             12, TextAnchor.MiddleCenter, FontStyle.Bold);
         y += 24f;
 
@@ -507,7 +507,7 @@ public static class PoseStudioBuild
         MakeSliderRow(c, cX, cW, "sclZ", "Scale Z", 0f, 3f, 1f, ref y);
 
         // ---- Blendshape section ----
-        MakeText(c, "Hdr_Blend", "— Blendshape —", cX, y, cW, 20f,
+        MakeText(c, "Hdr_Blend", "Blendshape", cX, y, cW, 20f,
             12, TextAnchor.MiddleCenter, FontStyle.Bold);
         y += 24f;
 
@@ -524,7 +524,7 @@ public static class PoseStudioBuild
         MakeSliderRow(c, cX, cW, "weight", "Blend Wt", 0f, 100f, 100f, ref y);
 
         // ---- Inverse kinematics (IK) section ----
-        MakeText(c, "Hdr_IK", "— Inverse kinematics (IK) —", cX, y, cW, 20f,
+        MakeText(c, "Hdr_IK", "Inverse kinematics (IK)", cX, y, cW, 20f,
             12, TextAnchor.MiddleCenter, FontStyle.Bold);
         y += 24f;
 
@@ -610,7 +610,7 @@ public static class PoseStudioBuild
 
         float y = 10f;
 
-        MakeText(root.transform, "Title", "Model Bones — pick one to add",
+        MakeText(root.transform, "Title", "Model Bones: pick one to add",
             P, y, contentW, 22f, 15, TextAnchor.MiddleCenter, FontStyle.Bold);
         y += 26f;
 
@@ -707,7 +707,7 @@ public static class PoseStudioBuild
         if (field != null)
         {
             // IMPORTANT: address the text/placeholder through the InputField's own
-            // references — the child is named "Text (Legacy)", so Find("Text")
+            // references, the child is named "Text (Legacy)", so Find("Text")
             // returns null. Use Overflow so a 12px line is never truncated to
             // nothing in the short box (the classic invisible-InputField bug).
             StyleInputText(field.textComponent, TextAnchor.MiddleRight,

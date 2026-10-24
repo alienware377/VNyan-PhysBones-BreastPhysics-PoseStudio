@@ -24,7 +24,7 @@ powershell -NoProfile -Command "Unblock-File -LiteralPath '%PS%' -ErrorAction Si
 powershell -NoProfile -ExecutionPolicy Bypass -STA -File "%PS%"
 echo.
 echo If a report opened, great. The file VNyan_Diagnostics_Report.txt is in this
-echo folder - please send it back.
+echo folder. Please send it back.
 echo.
 pause
 exit /b

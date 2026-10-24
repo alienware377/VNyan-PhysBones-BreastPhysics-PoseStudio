@@ -1,7 +1,7 @@
 # =============================================================================
 #  Troubleshoot-VNyan.ps1
 #
-#  Read-only diagnostic for the PhysBones / Jiggle Physics / Pose Studio
+#  Read-only diagnostic for the Pose Studio
 #  plugins. It does NOT change anything. It writes a report file you can send
 #  back so the problem can be pinpointed.
 #
@@ -9,8 +9,8 @@
 #    * Which VNyan folder you picked, and that it's a real VNyan install.
 #    * The Unity runtime version YOUR VNyan ships (from UnityPlayer.dll).
 #    * The Unity version each .vnobj bundle was BUILT with (read from the
-#      bundle header) - a mismatch here is the #1 cause of an empty panel.
-#    * That all three plugin folders exist with their .dll + .vnobj, sizes,
+#      bundle header); a mismatch here is the #1 cause of an empty panel.
+#    * That the plugin folder exist with their .dll + .vnobj, sizes,
 #      timestamps, and whether Windows has "blocked" them (Mark of the Web).
 #    * Your VNyan log (Player.log), pulling out every line that mentions the
 #      plugins, asset bundles, or exceptions.
@@ -21,7 +21,7 @@ $report = New-Object System.Collections.Generic.List[string]
 function Line([string]$s = '') { $report.Add($s); Write-Host $s }
 function Section([string]$s) { Line ''; Line ('=' * 70); Line $s; Line ('=' * 70) }
 
-Section "VNyan plugin diagnostics  -  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Section "VNyan plugin diagnostics, $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Line "PowerShell: $($PSVersionTable.PSVersion)  |  OS: $([System.Environment]::OSVersion.VersionString)"
 
 # ---- 1) pick the VNyan folder -----------------------------------------------
@@ -124,8 +124,6 @@ function Get-BundleUnityVersion([string]$path) {
 Section "3. Installed plugin files"
 
 $plugins = @(
-    @{ Name='VRChat PhysBones'; Folder='PhysBones';      Dll='PhysBones.dll';         Vnobj='PhysBones.vnobj' }
-    @{ Name='Jiggle Physics';   Folder='JigglePhysics';  Dll='JigglePhysics.dll';     Vnobj='JigglePhysics.vnobj' }
     @{ Name='Pose Studio';      Folder='PoseStudio';     Dll='PoseStudio.dll';        Vnobj='PoseStudio.vnobj' }
 )
 $asmRoot = Join-Path $VNyan 'Items\Assemblies'
@@ -196,7 +194,7 @@ if (-not $logCandidates -or $logCandidates.Count -eq 0) {
 
     # The very top of the log records WHICH VNyan actually ran (its data path).
     # If that path is NOT the folder you installed into, you launched a
-    # different VNyan copy - that alone explains an empty Plugins panel.
+    # different VNyan copy; that alone explains an empty Plugins panel.
     Line ""
     Line "----- log HEADER (first 30 lines: shows which VNyan actually ran) -----"
     $head = $lines | Select-Object -First 30
@@ -220,7 +218,7 @@ if (-not $logCandidates -or $logCandidates.Count -eq 0) {
             Line ">>> that actually runs, OR launch the VNyan you installed into."
             $script:wrongVNyan = $true
         } else {
-            Line ">>> (matches the folder you installed into - good)"
+            Line ">>> (matches the folder you installed into, good)"
         }
     }
 
@@ -236,7 +234,7 @@ if (-not $logCandidates -or $logCandidates.Count -eq 0) {
             $hits++
         }
     }
-    if ($hits -eq 0) { Line "  (no matching lines - the plugins may never have been loaded at all)" }
+    if ($hits -eq 0) { Line "  (no matching lines: the plugins may never have been loaded at all)" }
     Line ""
     Line "----- last 60 lines of the log (for context) -----"
     $tail = $lines | Select-Object -Last 60
@@ -286,12 +284,12 @@ foreach ($r in $steamRoots) {
 }
 $found = $found | Sort-Object -Unique
 if ($found.Count -eq 0) {
-    Line "No VNyan.exe turned up in the usual places - that is perfectly normal, VNyan has no"
+    Line "No VNyan.exe turned up in the usual places. That is perfectly normal: VNyan has no"
     Line "fixed install folder. The folder you picked above is the one that matters."
 } elseif ($found.Count -eq 1) {
     Line "Only one VNyan.exe found (good): $($found -join '; ')"
 } else {
-    Line "MULTIPLE VNyan.exe found - make sure you install into AND launch the SAME one:"
+    Line "MULTIPLE VNyan.exe found. Make sure you install into AND launch the SAME one:"
     foreach ($f in $found) {
         $marker = ''
         if ($f.ToLower().StartsWith($VNyan.ToLower())) { $marker = '   <-- the one you installed into' }
@@ -320,7 +318,7 @@ if ($script:wrongVNyan) {
     Line ""
     Line "  2) Make sure you LAUNCH the same VNyan you installed into (see sections"
     Line "     4 and 5). The socket errors in the log mean a second VNyan instance"
-    Line "     was running - fully close ALL VNyan, then relaunch just one."
+    Line "     was running. Fully close ALL VNyan, then relaunch just one."
 }
 
 # ---- write the report --------------------------------------------------------
